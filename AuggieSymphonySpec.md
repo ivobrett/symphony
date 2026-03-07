@@ -4,6 +4,8 @@ Status: Draft v1 (language-agnostic)
 
 Purpose: Define a service that orchestrates Augment coding agents to get project work done.
 
+This document is an adaptation of the [OpenAI Symphony Specification](https://github.com/openai/symphony/blob/main/SPEC.md) for use with Augment Code's AI coding agents instead of OpenAI Codex. The orchestration model, workspace management, and scheduling semantics are preserved from the original. The agent integration layer has been updated to leverage Augment's capabilities including MCP tools.
+
 ## 1. Problem Statement
 
 Auggie Symphony is a long-running automation service that continuously reads work from an issue tracker
