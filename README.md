@@ -12,6 +12,65 @@ Symphony is a long-running automation service that orchestrates Claude Code agen
 6. On completion, Symphony checks if the issue is still active and re-dispatches if needed
 7. On failure, it retries with exponential backoff
 
+## Agents and Coordination
+
+### One subprocess per issue
+
+Each dispatched issue gets exactly one `claude` CLI process running at a time. If 3 issues are in progress simultaneously, there are 3 `claude` subprocesses running — each in its own workspace directory, completely isolated from the others.
+
+```
+Symphony (Node.js process)
+├── claude subprocess → ~/symphony_workspaces/PROJ-42/
+├── claude subprocess → ~/symphony_workspaces/PROJ-43/
+└── claude subprocess → ~/symphony_workspaces/PROJ-44/
+```
+
+### Coordination is entirely in Symphony
+
+There is no agent-to-agent communication. The `claude` subprocesses don't know about each other. All coordination happens in Symphony's orchestrator — a single Node.js event loop maintaining in-memory state:
+
+- **`claimed`** — set of issue IDs reserved to prevent double-dispatch
+- **`running`** — map of issue ID → live subprocess metadata (PID, session ID, token counts, last event timestamp)
+- **`retry_attempts`** — map of issue ID → scheduled retry timer
+
+Before dispatching any issue, Symphony checks both `claimed` and `running`. Since Node.js is single-threaded, these checks are race-condition-free — no locking needed.
+
+### Concurrency limits
+
+Controlled by `agent.max_concurrent_agents` (default: 10). You can also set per-state limits:
+
+```yaml
+agent:
+  max_concurrent_agents: 5
+  max_concurrent_agents_by_state:
+    In Progress: 2   # at most 2 issues in "In Progress" at once
+    Todo: 3          # at most 3 in "Todo"
+```
+
+### Each session is bounded by `max_turns`
+
+A single `claude` subprocess runs until it finishes, hits `max_turns`, times out, or stalls. When it exits normally, Symphony schedules a 1-second continuation — it re-fetches the issue from Linear, and if it's still active, starts a new subprocess in the same workspace. This is how long-running issues are handled across multiple Claude sessions without one subprocess running indefinitely.
+
+```
+Issue PROJ-42 lifecycle:
+  Session 1 (attempt=null):  claude runs up to 30 turns → exits
+  Symphony: issue still active? yes → schedule continuation in 1s
+  Session 2 (attempt=1):     claude runs up to 30 turns → exits
+  Symphony: issue still active? no (moved to Done) → release, clean workspace
+```
+
+The `attempt` variable in the prompt template lets you give the agent different instructions on continuation runs — e.g. "check the current state of the workspace and resume" instead of starting from scratch.
+
+### What each subprocess does independently
+
+Once launched, each `claude` subprocess:
+- Has its own API connection to Anthropic
+- Has its own tool call budget (`max_turns`)
+- Reads and writes only within its workspace directory
+- Streams JSON events back to Symphony (token counts, tool calls, stop reason)
+
+Symphony reads that stream to update live session state and detect stalls, but does not intervene in what Claude decides to do within a session.
+
 ## Prerequisites
 
 - [Node.js](https://nodejs.org) 18+
