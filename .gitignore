@@ -1,0 +1,5 @@
+node_modules/
+dist/
+
+# Local workflow config — keep secrets out of git
+WORKFLOW.md
