@@ -1,6 +1,6 @@
 # Symphony
 
-Symphony is a long-running automation service that orchestrates Claude Code agents to work on software issues. It continuously polls a Linear project for eligible issues, creates isolated per-issue workspaces, and runs a Claude Code CLI session for each one — automatically retrying on failure and picking up new work as it appears.
+Symphony is a long-running automation service that orchestrates coding agents such as claude code, gemini and others to work on software issues. It continuously polls a Linear project for eligible issues, creates isolated per-issue workspaces, and runs a Claude Code CLI session for each one — automatically retrying on failure and picking up new work as it appears.
 
 ## How It Works
 
