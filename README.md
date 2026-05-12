@@ -16,18 +16,18 @@ Symphony is a long-running automation service that orchestrates coding agents su
 
 ### One subprocess per issue
 
-Each dispatched issue gets exactly one `claude` CLI process running at a time. If 3 issues are in progress simultaneously, there are 3 `claude` subprocesses running — each in its own workspace directory, completely isolated from the others.
+Each dispatched issue gets exactly one `claude` CLI process running at a time. If 3 issues are in progress simultaneously, there are 3 coding agent subprocesses running — each in its own workspace directory, completely isolated from the others.
 
 ```
 Symphony (Node.js process)
-├── claude subprocess → ~/symphony_workspaces/PROJ-42/
-├── claude subprocess → ~/symphony_workspaces/PROJ-43/
-└── claude subprocess → ~/symphony_workspaces/PROJ-44/
+├── coding agent subprocess → ~/symphony_workspaces/PROJ-42/
+├── coding agent subprocess → ~/symphony_workspaces/PROJ-43/
+└── coding agent subprocess → ~/symphony_workspaces/PROJ-44/
 ```
 
 ### Coordination is entirely in Symphony
 
-There is no agent-to-agent communication. The `claude` subprocesses don't know about each other. All coordination happens in Symphony's orchestrator — a single Node.js event loop maintaining in-memory state:
+There is no agent-to-agent communication. The coding agent subprocesses don't know about each other. All coordination happens in Symphony's orchestrator — a single Node.js event loop maintaining in-memory state:
 
 - **`claimed`** — set of issue IDs reserved to prevent double-dispatch
 - **`running`** — map of issue ID → live subprocess metadata (PID, session ID, token counts, last event timestamp)
@@ -49,7 +49,7 @@ agent:
 
 ### Each session is bounded by `max_turns`
 
-A single `claude` subprocess runs until it finishes, hits `max_turns`, times out, or stalls. When it exits normally, Symphony schedules a 1-second continuation — it re-fetches the issue from Linear, and if it's still active, starts a new subprocess in the same workspace. This is how long-running issues are handled across multiple Claude sessions without one subprocess running indefinitely.
+A single coding agent subprocess runs until it finishes, hits `max_turns`, times out, or stalls. When it exits normally, Symphony schedules a 1-second continuation — it re-fetches the issue from Linear, and if it's still active, starts a new subprocess in the same workspace. This is how long-running issues are handled across multiple Claude sessions without one subprocess running indefinitely.
 
 ```
 Issue PROJ-42 lifecycle:
@@ -63,7 +63,7 @@ The `attempt` variable in the prompt template lets you give the agent different 
 
 ### What each subprocess does independently
 
-Once launched, each `claude` subprocess:
+Once launched, each coding agent subprocess:
 - Has its own API connection to Anthropic
 - Has its own tool call budget (`max_turns`)
 - Reads and writes only within its workspace directory
