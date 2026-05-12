@@ -129,7 +129,7 @@ export function buildServiceConfig(workflow: WorkflowDefinition): ServiceConfig 
       kind: trackerKind,
       endpoint: String(tracker['endpoint'] ?? (isLinear ? 'https://api.linear.app/graphql' : '')),
       api_key: trackerApiKey,
-      project_slug: String(tracker['project_slug'] ?? ''),
+      projects: section(tracker, 'projects') as Record<string, string>,
       active_states: activeStates.length > 0 ? activeStates : ['Todo', 'In Progress'],
       terminal_states: terminalStates.length > 0 ? terminalStates : ['Closed', 'Cancelled', 'Canceled', 'Duplicate', 'Done'],
     },
@@ -178,7 +178,9 @@ export function validateDispatchConfig(config: ServiceConfig): string[] {
   if (!config.tracker.kind) errors.push('tracker.kind is required');
   if (config.tracker.kind !== 'linear') errors.push(`tracker.kind "${config.tracker.kind}" is not supported`);
   if (!config.tracker.api_key) errors.push('tracker.api_key is missing or empty after $VAR resolution');
-  if (!config.tracker.project_slug) errors.push('tracker.project_slug is required for linear');
+  if (!config.tracker.projects || Object.keys(config.tracker.projects).length === 0) {
+    errors.push('tracker.projects mapping is required for multi-project orchestration');
+  }
 
   const backend = config.agent_backend;
   if (backend === 'claude') {

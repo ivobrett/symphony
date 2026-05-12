@@ -240,7 +240,8 @@ export class Orchestrator {
 
     try {
       // Prepare workspace
-      const workspace = await prepareWorkspace(issue.identifier, this.config.workspace.root, this.config.hooks);
+      const repoUrl = this.config.tracker.projects[issue.project_slug];
+      const workspace = await prepareWorkspace(issue.identifier, this.config.workspace.root, this.config.hooks, repoUrl);
       entry.workspace_path = workspace.path;
 
       if (cancelSignal.aborted) return;

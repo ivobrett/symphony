@@ -9,6 +9,7 @@ export interface BlockerRef {
 export interface Issue {
   id: string;
   identifier: string;
+  project_slug: string;
   title: string;
   description: string | null;
   priority: number | null;
@@ -30,7 +31,7 @@ export interface TrackerConfig {
   kind: string;
   endpoint: string;
   api_key: string;
-  project_slug: string;
+  projects: Record<string, string>;
   active_states: string[];
   terminal_states: string[];
 }

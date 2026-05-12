@@ -22,6 +22,7 @@ export async function prepareWorkspace(
   identifier: string,
   workspaceRoot: string,
   hooks: HooksConfig,
+  repoUrl?: string,
 ): Promise<Workspace> {
   const workspace_key = sanitizeIdentifier(identifier);
   const workspacePath = path.join(path.resolve(workspaceRoot), workspace_key);
@@ -35,8 +36,15 @@ export async function prepareWorkspace(
     logger.info({ workspace_path: workspacePath }, 'workspace directory created');
   }
 
-  if (created_now && hooks.after_create) {
-    await runHook('after_create', hooks.after_create, workspacePath, hooks.timeout_ms);
+  if (created_now) {
+    if (repoUrl) {
+      logger.info({ repo_url: repoUrl, workspace_path: workspacePath }, 'cloning repository');
+      await runHook('clone', `git clone "${repoUrl}" .`, workspacePath, hooks.timeout_ms);
+    }
+
+    if (hooks.after_create) {
+      await runHook('after_create', hooks.after_create, workspacePath, hooks.timeout_ms);
+    }
   }
 
   return { path: workspacePath, workspace_key, created_now };
