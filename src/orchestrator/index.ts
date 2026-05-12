@@ -7,6 +7,8 @@ import { TrackerClient } from '../tracker/client';
 import { prepareWorkspace, removeWorkspace } from '../workspace/manager';
 import { runHook } from '../workspace/hooks';
 import { runAgent } from '../agent/runner';
+import { runGeminiAgent } from '../agent/gemini-runner';
+import { runFreebuffAgent } from '../agent/freebuff-runner';
 import { createInitialState, addRunning, removeRunning, unclaim, claim, updateLiveSession, removeRetry, accumulateRuntime } from './state';
 import { isEligible, sortForDispatch } from './dispatch';
 import { reconcileStalls, reconcileTrackerStates } from './reconcile';
@@ -52,6 +54,11 @@ export class Orchestrator {
     }
 
     this.tracker = new LinearClient(this.config.tracker);
+
+    logger.info(
+      { agent_backend: this.config.agent_backend },
+      `agent backend: ${this.config.agent_backend}`,
+    );
 
     this.state = createInitialState(
       this.config.polling.interval_ms,
@@ -108,7 +115,10 @@ export class Orchestrator {
       this.state.poll_interval_ms = newConfig.polling.interval_ms;
       this.state.max_concurrent_agents = newConfig.agent.max_concurrent_agents;
       this.tracker = new LinearClient(newConfig.tracker);
-      logger.info({ workflow_path: this.workflowPath }, 'workflow reloaded and applied');
+      logger.info(
+        { workflow_path: this.workflowPath, agent_backend: newConfig.agent_backend },
+        'workflow reloaded and applied',
+      );
     } catch (err) {
       logger.error({ err }, 'workflow reload failed, keeping last good config');
     }
@@ -242,25 +252,38 @@ export class Orchestrator {
 
       if (cancelSignal.aborted) return;
 
-      // Run agent
-      await runAgent(
-        issue,
-        attempt,
-        workspace.path,
-        this.config.claude,
-        this.promptTemplate,
-        {
-          onEvent: (event) => {
-            updateLiveSession(this.state, issue.id, event);
-            if (event.usage) lastUsage = event.usage;
-            if (event.event === 'turn_completed') workerSucceeded = true;
-            if (event.event === 'turn_failed' || event.event === 'startup_failed') {
-              workerError = event.error ?? 'unknown error';
-            }
-          },
-        },
-        cancelSignal,
-      );
+      // Run agent — route to the correct backend
+      const onEvent = (event: import('../domain').AgentEvent) => {
+        updateLiveSession(this.state, issue.id, event);
+        if (event.usage) lastUsage = event.usage;
+        if (event.event === 'turn_completed') workerSucceeded = true;
+        if (event.event === 'turn_failed' || event.event === 'startup_failed') {
+          workerError = event.error ?? 'unknown error';
+        }
+      };
+
+      const backend = this.config.agent_backend;
+
+      if (backend === 'gemini') {
+        await runGeminiAgent(
+          issue, attempt, workspace.path,
+          this.config.gemini, this.promptTemplate,
+          { onEvent }, cancelSignal,
+        );
+      } else if (backend === 'freebuff') {
+        await runFreebuffAgent(
+          issue, attempt, workspace.path,
+          this.config.freebuff, this.promptTemplate,
+          { onEvent }, cancelSignal,
+        );
+      } else {
+        // Default: claude
+        await runAgent(
+          issue, attempt, workspace.path,
+          this.config.claude, this.promptTemplate,
+          { onEvent }, cancelSignal,
+        );
+      }
     } catch (err) {
       workerError = (err as Error).message;
       ilog.error({ err }, `worker error issue_identifier=${issue.identifier}`);

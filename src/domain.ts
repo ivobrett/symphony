@@ -70,9 +70,47 @@ export interface ClaudeConfig {
   stall_timeout_ms: number;
 }
 
+export interface GeminiKeyPool {
+  /** List of GOOGLE_API_KEY values to rotate through on rate-limit errors */
+  api_keys: string[];
+  /** Index of the currently active key (managed at runtime) */
+  current_index: number;
+}
+
+export interface GeminiConfig {
+  command: string;
+  model: string | null;
+  max_turns: number;
+  /** Primary API key — also used as api_keys[0] if key_pool is empty */
+  api_key: string;
+  /** Optional pool of additional keys to rotate through on rate limits */
+  key_pool: GeminiKeyPool | null;
+  system_prompt: string | null;
+  turn_timeout_ms: number;
+  stall_timeout_ms: number;
+  sandbox: string | null;
+  output_format: string;
+}
+
+export interface FreebuffConfig {
+  command: string;
+  model: string | null;
+  max_turns: number;
+  turn_timeout_ms: number;
+  stall_timeout_ms: number;
+  /** true = use @codebuff/sdk (headless, requires api_key); false = CLI stdin mode */
+  use_sdk: boolean;
+  /** Codebuff API key — required when use_sdk is true */
+  api_key: string | null;
+  /** SDK agent identifier, e.g. 'codebuff/base@latest' */
+  agent: string;
+}
+
 export interface ServerConfig {
   port: number | null;
 }
+
+export type AgentBackend = 'claude' | 'gemini' | 'freebuff';
 
 export interface ServiceConfig {
   tracker: TrackerConfig;
@@ -80,7 +118,10 @@ export interface ServiceConfig {
   workspace: WorkspaceConfig;
   hooks: HooksConfig;
   agent: AgentConfig;
+  agent_backend: AgentBackend;
   claude: ClaudeConfig;
+  gemini: GeminiConfig;
+  freebuff: FreebuffConfig;
   server: ServerConfig;
 }
 

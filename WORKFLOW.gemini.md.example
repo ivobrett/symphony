@@ -1,0 +1,83 @@
+---
+tracker:
+  kind: linear
+  api_key: $LINEAR_API_KEY
+  project_slug: my-project-slug
+
+polling:
+  interval_ms: 30000
+
+workspace:
+  root: ~/symphony_workspaces
+
+hooks:
+  before_run: |
+    set -e
+    REPO_URL="https://github.com/your-org/your-repo.git"
+    if [ ! -d .git ]; then
+      git clone "$REPO_URL" .
+    fi
+    git fetch origin
+    git reset --hard origin/main
+  timeout_ms: 120000
+
+agent:
+  backend: gemini         # use gemini CLI as the agent runner
+  max_concurrent_agents: 3
+  max_retry_backoff_ms: 300000
+
+gemini:
+  command: gemini
+  model: gemini-2.5-pro-preview
+  output_format: text     # 'text' or 'json' — json gives token usage info
+  turn_timeout_ms: 3600000
+  stall_timeout_ms: 300000
+
+  # Primary Google account key
+  api_key: $GEMINI_KEY_1
+
+  # Additional Google account keys to rotate through when quota is hit.
+  # Symphony detects 429 / quota-exhausted errors automatically and advances
+  # to the next key in this list (round-robin). Add as many as you have.
+  key_pool:
+    - $GEMINI_KEY_2
+    - $GEMINI_KEY_3
+    # - $GEMINI_KEY_4   # uncomment and add more accounts as needed
+
+server:
+  port: 8080
+---
+
+You are a software engineer working on issue {{ issue.identifier }}: {{ issue.title }}.
+
+{% if attempt %}
+This is continuation attempt #{{ attempt }}. A previous session ran in this workspace.
+Check the current state of the codebase and resume work — do not start from scratch.
+{% endif %}
+
+## Issue Details
+
+- **Identifier**: {{ issue.identifier }}
+- **Title**: {{ issue.title }}
+- **State**: {{ issue.state }}
+{% if issue.description %}
+- **Description**: {{ issue.description }}
+{% endif %}
+{% if issue.priority %}
+- **Priority**: {{ issue.priority }}
+{% endif %}
+{% if issue.labels.size > 0 %}
+- **Labels**: {{ issue.labels | join: ", " }}
+{% endif %}
+{% if issue.url %}
+- **URL**: {{ issue.url }}
+{% endif %}
+
+## Instructions
+
+1. Understand the issue thoroughly before making changes.
+2. Make targeted, minimal changes to address the issue.
+3. Write or update tests as needed.
+4. Ensure the code builds and tests pass before finishing.
+5. Create a git branch named `{{ issue.branch_name | default: issue.identifier }}` and commit your changes.
+6. Open a pull request when ready for review.

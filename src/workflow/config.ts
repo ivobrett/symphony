@@ -1,6 +1,7 @@
 import * as os from 'os';
 import * as path from 'path';
-import { ServiceConfig, WorkflowDefinition } from '../domain';
+import { AgentBackend, FreebuffConfig, GeminiConfig, ServiceConfig, WorkflowDefinition } from '../domain';
+import { buildKeyPool } from '../agent/gemini-key-rotation';
 
 function resolveEnv(value: string | undefined | null): string {
   if (!value) return '';
@@ -20,7 +21,7 @@ function resolvePath(value: string | undefined | null): string {
   if (resolved.includes(path.sep) || resolved.startsWith('/')) {
     return path.resolve(resolved);
   }
-  return resolved; // bare relative root allowed
+  return resolved;
 }
 
 function toStringList(value: unknown): string[] {
@@ -56,6 +57,8 @@ export function buildServiceConfig(workflow: WorkflowDefinition): ServiceConfig 
   const hooks = section(cfg, 'hooks');
   const agent = section(cfg, 'agent');
   const claude = section(cfg, 'claude');
+  const geminiCfg = section(cfg, 'gemini');
+  const freebuffCfg = section(cfg, 'freebuff');
   const server = section(cfg, 'server');
 
   const trackerKind = String(tracker['kind'] ?? '');
@@ -78,6 +81,48 @@ export function buildServiceConfig(workflow: WorkflowDefinition): ServiceConfig 
 
   const claudeApiKey = resolveEnv(String(claude['api_key'] ?? '$ANTHROPIC_API_KEY'));
   const trackerApiKey = resolveEnv(String(tracker['api_key'] ?? (isLinear ? '$LINEAR_API_KEY' : '')));
+
+  // Determine agent backend — defaults to 'claude' for backward compat
+  const rawBackend = String(agent['backend'] ?? cfg['agent_backend'] ?? 'claude');
+  const agentBackend: AgentBackend = (['claude', 'gemini', 'freebuff'].includes(rawBackend)
+    ? rawBackend
+    : 'claude') as AgentBackend;
+
+  // ── Gemini config ──────────────────────────────────────────────────────────
+  const geminiPrimaryKey = resolveEnv(String(geminiCfg['api_key'] ?? '$GOOGLE_API_KEY'));
+
+  // Additional keys for round-robin rotation (array of env var names or literals)
+  const rawExtraKeys = toStringList(geminiCfg['key_pool']);
+  const extraKeys = rawExtraKeys.map(resolveEnv).filter(Boolean);
+
+  const geminiKeyPool = (geminiPrimaryKey || extraKeys.length > 0)
+    ? buildKeyPool(geminiPrimaryKey, extraKeys)
+    : null;
+
+  const geminiConfig: GeminiConfig = {
+    command: String(geminiCfg['command'] ?? 'gemini'),
+    model: (geminiCfg['model'] as string) ?? null,
+    max_turns: toPositiveInt(geminiCfg['max_turns'], 20),
+    api_key: geminiPrimaryKey,
+    key_pool: geminiKeyPool,
+    system_prompt: (geminiCfg['system_prompt'] as string) ?? null,
+    turn_timeout_ms: toPositiveInt(geminiCfg['turn_timeout_ms'], 3600000),
+    stall_timeout_ms: toInt(geminiCfg['stall_timeout_ms'], 300000),
+    sandbox: (geminiCfg['sandbox'] as string) ?? null,
+    output_format: String(geminiCfg['output_format'] ?? 'text'),
+  };
+
+  // ── Freebuff config ────────────────────────────────────────────────────────
+  const freebuffConfig: FreebuffConfig = {
+    command: String(freebuffCfg['command'] ?? 'freebuff'),
+    model: (freebuffCfg['model'] as string) ?? null,
+    max_turns: toPositiveInt(freebuffCfg['max_turns'], 20),
+    turn_timeout_ms: toPositiveInt(freebuffCfg['turn_timeout_ms'], 3600000),
+    stall_timeout_ms: toInt(freebuffCfg['stall_timeout_ms'], 300000),
+    use_sdk: Boolean(freebuffCfg['use_sdk'] ?? false),
+    api_key: resolveEnv(String(freebuffCfg['api_key'] ?? '$CODEBUFF_API_KEY')) || null,
+    agent: String(freebuffCfg['agent'] ?? 'codebuff/base@latest'),
+  };
 
   return {
     tracker: {
@@ -106,6 +151,7 @@ export function buildServiceConfig(workflow: WorkflowDefinition): ServiceConfig 
       max_retry_backoff_ms: toPositiveInt(agent['max_retry_backoff_ms'], 300000),
       max_concurrent_agents_by_state: byState,
     },
+    agent_backend: agentBackend,
     claude: {
       command: String(claude['command'] ?? 'claude'),
       model: (claude['model'] as string) ?? null,
@@ -118,6 +164,8 @@ export function buildServiceConfig(workflow: WorkflowDefinition): ServiceConfig 
       turn_timeout_ms: toPositiveInt(claude['turn_timeout_ms'], 3600000),
       stall_timeout_ms: toInt(claude['stall_timeout_ms'], 300000),
     },
+    gemini: geminiConfig,
+    freebuff: freebuffConfig,
     server: {
       port: server['port'] != null ? toPositiveInt(server['port'], 0) || null : null,
     },
@@ -126,11 +174,26 @@ export function buildServiceConfig(workflow: WorkflowDefinition): ServiceConfig 
 
 export function validateDispatchConfig(config: ServiceConfig): string[] {
   const errors: string[] = [];
+
   if (!config.tracker.kind) errors.push('tracker.kind is required');
   if (config.tracker.kind !== 'linear') errors.push(`tracker.kind "${config.tracker.kind}" is not supported`);
   if (!config.tracker.api_key) errors.push('tracker.api_key is missing or empty after $VAR resolution');
   if (!config.tracker.project_slug) errors.push('tracker.project_slug is required for linear');
-  if (!config.claude.command) errors.push('claude.command is required');
-  if (!config.claude.api_key) errors.push('claude.api_key (ANTHROPIC_API_KEY) is missing or empty');
+
+  const backend = config.agent_backend;
+  if (backend === 'claude') {
+    if (!config.claude.command) errors.push('claude.command is required');
+    if (!config.claude.api_key) errors.push('claude.api_key (ANTHROPIC_API_KEY) is missing or empty');
+  } else if (backend === 'gemini') {
+    if (!config.gemini.command) errors.push('gemini.command is required');
+    if (!config.gemini.api_key && (!config.gemini.key_pool || config.gemini.key_pool.api_keys.length === 0)) {
+      errors.push('gemini.api_key (GOOGLE_API_KEY) is missing — set api_key or key_pool in [gemini] config');
+    }
+  } else if (backend === 'freebuff') {
+    if (!config.freebuff.command) errors.push('freebuff.command is required');
+  } else {
+    errors.push(`unknown agent_backend: "${String(backend)}" — must be claude, gemini, or freebuff`);
+  }
+
   return errors;
 }

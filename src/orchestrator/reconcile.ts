@@ -13,7 +13,11 @@ export function reconcileStalls(
   dispatchFn: DispatchFn,
   tracker: TrackerClient,
 ): void {
-  const stallMs = config.claude.stall_timeout_ms;
+  // Use stall timeout from whichever backend is active
+  const stallMs =
+    config.agent_backend === 'gemini' ? config.gemini.stall_timeout_ms
+    : config.agent_backend === 'freebuff' ? config.freebuff.stall_timeout_ms
+    : config.claude.stall_timeout_ms;
   if (stallMs <= 0) return;
 
   const now = Date.now();
