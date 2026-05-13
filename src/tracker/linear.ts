@@ -62,10 +62,10 @@ async function gqlRequest(
 }
 
 const CANDIDATE_ISSUES_QUERY = `
-  query CandidateIssues($projectSlug: String!, $states: [String!]!, $after: String) {
+  query CandidateIssues($projectSlugs: [String!]!, $states: [String!]!, $after: String) {
     issues(
       filter: {
-        project: { slugId: { eq: $projectSlug } }
+        project: { slugId: { in: $projectSlugs } }
         state: { name: { in: $states } }
       }
       first: ${PAGE_SIZE}
@@ -83,6 +83,7 @@ const CANDIDATE_ISSUES_QUERY = `
         createdAt
         updatedAt
         state { name }
+        project { slugId }
         labels { nodes { name } }
         relations {
           nodes {
@@ -104,10 +105,10 @@ const CANDIDATE_ISSUES_QUERY = `
 `;
 
 const ISSUES_BY_STATES_QUERY = `
-  query IssuesByStates($projectSlug: String!, $states: [String!]!) {
+  query IssuesByStates($projectSlugs: [String!]!, $states: [String!]!) {
     issues(
       filter: {
-        project: { slugId: { eq: $projectSlug } }
+        project: { slugId: { in: $projectSlugs } }
         state: { name: { in: $states } }
       }
       first: 250
@@ -116,6 +117,7 @@ const ISSUES_BY_STATES_QUERY = `
         id
         identifier
         state { name }
+        project { slugId }
       }
     }
   }
@@ -128,6 +130,7 @@ const ISSUE_STATES_BY_IDS_QUERY = `
         id
         identifier
         state { name }
+        project { slugId }
       }
     }
   }
@@ -159,6 +162,7 @@ function normalizeIssue(node: any): Issue {
     description: node.description != null ? String(node.description) : null,
     priority: priority !== 0 ? priority : null, // Linear uses 0 for "no priority"
     state: String(node.state?.name ?? ''),
+    project_slug: String(node.project?.slugId ?? ''),
     branch_name: node.branchName != null ? String(node.branchName) : null,
     url: node.url != null ? String(node.url) : null,
     labels,
@@ -171,14 +175,14 @@ function normalizeIssue(node: any): Issue {
 export class LinearClient implements TrackerClient {
   private readonly endpoint: string;
   private readonly apiKey: string;
-  private readonly projectSlug: string;
+  private readonly projectSlugs: string[];
   private readonly activeStates: string[];
   private readonly terminalStates: string[];
 
   constructor(config: TrackerConfig) {
     this.endpoint = config.endpoint;
     this.apiKey = config.api_key;
-    this.projectSlug = config.project_slug;
+    this.projectSlugs = config.project_slugs;
     this.activeStates = config.active_states;
     this.terminalStates = config.terminal_states;
   }
@@ -188,8 +192,9 @@ export class LinearClient implements TrackerClient {
     let after: string | null = null;
 
     for (;;) {
+      logger.info({ projectSlugs: this.projectSlugs, states: this.activeStates }, `fetching candidate issues from linear...`);
       const data = await gqlRequest(this.endpoint, this.apiKey, CANDIDATE_ISSUES_QUERY, {
-        projectSlug: this.projectSlug,
+        projectSlugs: this.projectSlugs,
         states: this.activeStates,
         after,
       });
@@ -197,7 +202,12 @@ export class LinearClient implements TrackerClient {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const issuesData = (data as any).issues;
       if (!issuesData || !Array.isArray(issuesData.nodes)) {
+        logger.warn({ data }, 'linear api returned unexpected payload shape');
         throw new TrackerError('linear_unknown_payload', 'Unexpected issues payload shape');
+      }
+
+      if (issuesData.nodes.length === 0) {
+        logger.info('no candidate issues found in these states');
       }
 
       for (const node of issuesData.nodes) {
@@ -220,7 +230,7 @@ export class LinearClient implements TrackerClient {
 
   async fetchIssuesByStates(stateNames: string[]): Promise<Issue[]> {
     const data = await gqlRequest(this.endpoint, this.apiKey, ISSUES_BY_STATES_QUERY, {
-      projectSlug: this.projectSlug,
+      projectSlugs: this.projectSlugs,
       states: stateNames,
     });
 
@@ -255,5 +265,43 @@ export class LinearClient implements TrackerClient {
 
   getTerminalStates(): string[] {
     return this.terminalStates;
+  }
+
+  async fetchStateIdByName(name: string): Promise<string | null> {
+    const query = `
+      query GetState($name: String!) {
+        workflowStates(filter: { name: { eq: $name } }) {
+          nodes { id }
+        }
+      }
+    `;
+    const data = await gqlRequest(this.endpoint, this.apiKey, query, { name });
+    return (data['workflowStates'] as any)?.nodes?.[0]?.id || null;
+  }
+
+  async updateIssue(issueId: string, updates: { stateId?: string }): Promise<void> {
+    const mutation = `
+      mutation UpdateIssue($id: String!, $stateId: String) {
+        issueUpdate(id: $id, input: { stateId: $stateId }) {
+          success
+        }
+      }
+    `;
+    await gqlRequest(this.endpoint, this.apiKey, mutation, { id: issueId, stateId: updates.stateId });
+  }
+
+  async addComment(issueId: string, body: string): Promise<void> {
+    const mutation = `
+      mutation CreateComment($issueId: String!, $body: String!) {
+        commentCreate(input: { issueId: $issueId, body: $body }) {
+          success
+        }
+      }
+    `;
+    await gqlRequest(this.endpoint, this.apiKey, mutation, { issueId, body });
+  }
+
+  async gqlRequest(endpoint: string, apiKey: string, query: string, variables: Record<string, unknown>) {
+    return gqlRequest(endpoint, apiKey, query, variables);
   }
 }

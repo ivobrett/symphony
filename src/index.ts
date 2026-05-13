@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import * as path from 'path';
 import { Orchestrator } from './orchestrator';
 import { startHttpServer } from './observability/server';

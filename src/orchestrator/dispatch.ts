@@ -23,24 +23,15 @@ export function isEligible(
 ): boolean {
   if (!issue.id || !issue.identifier || !issue.title || !issue.state) return false;
 
-  const activeStates = config.tracker.active_states;
-  const terminalStates = config.tracker.terminal_states;
+  const activeStates = config.tracker.linear.active_states;
+  const terminalStates = config.tracker.linear.terminal_states;
 
   if (!isActive(issue.state, activeStates, terminalStates)) return false;
   if (orchState.running.has(issue.id)) return false;
   if (!opts.skipClaimedCheck && orchState.claimed.has(issue.id)) return false;
 
-  const globalSlots = config.agent.max_concurrent_agents - orchState.running.size;
+  const globalSlots = config.orchestrator.max_concurrent_agents - orchState.running.size;
   if (globalSlots <= 0) return false;
-
-  const stateKey = normalizeState(issue.state);
-  const perStateLimit = config.agent.max_concurrent_agents_by_state[stateKey];
-  if (perStateLimit != null) {
-    const countInState = [...orchState.running.values()].filter(
-      (e) => normalizeState(e.issue.state) === stateKey,
-    ).length;
-    if (countInState >= perStateLimit) return false;
-  }
 
   // Blocker rule: if state is "todo", block if any blocker is non-terminal
   if (normalizeState(issue.state) === 'todo') {

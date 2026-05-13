@@ -23,18 +23,21 @@ import { activeKey, isRateLimitError, rotateKey } from './gemini-key-rotation';
 
 const MAX_LINE_BYTES = 10 * 1024 * 1024;
 
-function buildGeminiCommand(config: GeminiConfig, promptFile: string): string {
-  const parts: string[] = [config.command];
+function buildGeminiCommand(config: GeminiConfig): string[] {
+  const parts: string[] = ['/opt/homebrew/bin/npx', '@google/gemini-cli'];
 
-  // Headless: -p flag reads prompt from argument (we cat the file in)
-  parts.push('-p', `"$(cat ${shellEscape(promptFile)})"`);
+  // Headless mode
+  parts.push('--approval-mode', 'yolo');
+  parts.push('--skip-trust');
 
-  if (config.model) parts.push('--model', config.model);
-  if (config.system_prompt) parts.push('--system-instruction', shellEscape(config.system_prompt));
+  if (config.model) {
+    parts.push('--model', config.model);
+  }
+  if (config.system_prompt) parts.push('--system-instruction', config.system_prompt);
   if (config.sandbox) parts.push('--sandbox', config.sandbox);
   parts.push('--output-format', config.output_format);
 
-  return parts.join(' ');
+  return parts;
 }
 
 function shellEscape(s: string): string {
@@ -72,7 +75,9 @@ export async function runGeminiAgent(
   const promptFile = path.join(os.tmpdir(), `symphony-gemini-${crypto.randomUUID()}.txt`);
   fs.writeFileSync(promptFile, renderedPrompt, 'utf8');
 
-  const command = buildGeminiCommand(config, promptFile);
+  const command = buildGeminiCommand(config);
+  // Pass prompt via -p flag only (not also via stdin to avoid duplication)
+  command.push('-p', renderedPrompt);
 
   // Use the currently active key from the pool (or the primary key)
   const apiKey = activeKey(config);
@@ -82,16 +87,29 @@ export async function runGeminiAgent(
     `launching gemini cli issue_identifier=${issue.identifier}`,
   );
 
+  // Use a per-run temp HOME so the CLI cannot find cached OAuth credentials.
+  // Without this, the CLI prefers OAuth over GOOGLE_API_KEY (OAuth quota is tiny
+  // and doesn't appear in the Google AI Studio dashboard).
+  const tmpHome = path.join(os.tmpdir(), `symphony-gemini-home-${crypto.randomUUID()}`);
+  fs.mkdirSync(tmpHome, { recursive: true });
+
   const env: NodeJS.ProcessEnv = { ...process.env };
+  env['HOME'] = tmpHome;
   env['GOOGLE_API_KEY'] = apiKey;
+  env['GEMINI_API_KEY'] = apiKey;
+  // Remove any cached OAuth tokens from the inherited env
+  delete env['GOOGLE_OAUTH_ACCESS_TOKEN'];
+  delete env['GOOGLE_APPLICATION_CREDENTIALS'];
   env['GEMINI_CLI_TRUST_WORKSPACE'] = 'true';
   env['CI'] = 'true';
 
-  const child = spawn('bash', ['-lc', command], {
+  const [bin, ...args] = command;
+  const child = spawn(bin, args, {
     cwd: resolvedWs,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  // stdin is ignored — prompt is passed via -p flag
 
   const pid = child.pid ?? null;
   const sessionId = `gemini-${issue.identifier}-${crypto.randomUUID().slice(0, 8)}`;
@@ -159,10 +177,20 @@ export async function runGeminiAgent(
     });
   });
 
-  // Also watch stderr for rate limit signals
+  // Also watch stderr for rate limit signals and log as notifications
   child.stderr.on('data', (chunk: Buffer) => {
     const text = chunk.toString();
     logger.debug({ issue_identifier: issue.identifier }, `gemini stderr: ${text}`);
+    
+    // Show errors in the terminal
+    callbacks.onEvent({ 
+      event: 'notification', 
+      timestamp: new Date(), 
+      claude_pid: pid, 
+      session_id: sessionId, 
+      message: `[stderr] ${text.slice(0, 200)}` 
+    });
+
     if (isRateLimitError(text)) {
       rateLimitDetected = true;
       logger.warn({ issue_identifier: issue.identifier }, 'gemini rate limit in stderr, will rotate key');
@@ -176,6 +204,8 @@ export async function runGeminiAgent(
       rl.close();
       fs.unlink(promptFile, () => {});
 
+      fs.rm(tmpHome, { recursive: true, force: true }, () => {});
+
       if (done) { resolve(); return; }
       done = true;
 
@@ -187,7 +217,8 @@ export async function runGeminiAgent(
         }
       }
 
-      if (code === 0 && !rateLimitDetected) {
+      // If exit code is 0, it's a success regardless of transient rate limits in stderr
+      if (code === 0) {
         callbacks.onEvent({
           event: 'turn_completed',
           timestamp: new Date(),

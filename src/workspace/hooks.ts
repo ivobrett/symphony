@@ -8,13 +8,23 @@ export async function runHook(
   script: string,
   cwd: string,
   timeoutMs: number,
+  context: Record<string, string> = {},
 ): Promise<void> {
   const effectiveTimeout = timeoutMs > 0 ? timeoutMs : 60000;
+
+  // Perform simple template replacement with shell escaping
+  let interpolatedScript = script;
+  for (const [key, value] of Object.entries(context)) {
+    // Escape single quotes for shell safety
+    const escapedValue = value.replace(/'/g, "'\\''");
+    const regex = new RegExp(`{{${key}}}`, 'g');
+    interpolatedScript = interpolatedScript.replace(regex, escapedValue);
+  }
 
   logger.info({ hook: hookName, cwd }, `running hook hook=${hookName}`);
 
   return new Promise((resolve, reject) => {
-    const child = spawn('sh', ['-lc', script], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('sh', ['-lc', interpolatedScript], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
 
     let stdout = '';
     let stderr = '';

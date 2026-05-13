@@ -1,8 +1,21 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { HooksConfig, Workspace } from '../domain';
 import { logger } from '../observability/logger';
 import { runHook } from './hooks';
+
+interface HooksConfig {
+  before_run?: string | null;
+  after_run?: string | null;
+  before_remove?: string | null;
+  after_create?: string | null;
+  timeout_ms: number;
+}
+
+interface Workspace {
+  path: string;
+  workspace_key: string;
+  created_now: boolean;
+}
 
 export function sanitizeIdentifier(identifier: string): string {
   return identifier.replace(/[^A-Za-z0-9._-]/g, '_');

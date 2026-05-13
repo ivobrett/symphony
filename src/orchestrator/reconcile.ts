@@ -15,9 +15,8 @@ export function reconcileStalls(
 ): void {
   // Use stall timeout from whichever backend is active
   const stallMs =
-    config.agent_backend === 'gemini' ? config.gemini.stall_timeout_ms
-    : config.agent_backend === 'freebuff' ? config.freebuff.stall_timeout_ms
-    : config.claude.stall_timeout_ms;
+    config.agent.backend === 'gemini' ? (config.agent.gemini?.stall_timeout_ms ?? 300000)
+    : 300000;
   if (stallMs <= 0) return;
 
   const now = Date.now();
@@ -42,7 +41,7 @@ export function reconcileStalls(
         entry.issue.identifier,
         nextAttempt,
         'stall_timeout',
-        computeBackoffMs(nextAttempt, config.agent.max_retry_backoff_ms),
+        computeBackoffMs(nextAttempt, config.orchestrator.max_retry_backoff_ms),
         config,
         tracker,
         dispatchFn,
@@ -68,8 +67,8 @@ export async function reconcileTrackerStates(
     return;
   }
 
-  const terminalStates = config.tracker.terminal_states;
-  const activeStates = config.tracker.active_states;
+  const terminalStates = config.tracker.linear.terminal_states;
+  const activeStates = config.tracker.linear.active_states;
 
   const normalize = (s: string) => s.trim().toLowerCase();
   const activeNorm = activeStates.map(normalize);

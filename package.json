@@ -25,6 +25,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.3.5",
     "chokidar": "^5.0.0",
+    "dotenv": "^17.4.2",
     "fastify": "^5.8.1",
     "graphql-request": "^7.4.0",
     "js-yaml": "^4.1.1",

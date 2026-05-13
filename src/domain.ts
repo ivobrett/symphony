@@ -1,9 +1,15 @@
 // Core domain types for Symphony
 
-export interface BlockerRef {
-  id: string | null;
-  identifier: string | null;
-  state: string | null;
+export interface WorkflowDefinition {
+  config: Record<string, unknown>;
+  prompt_template: string;
+}
+
+export class WorkflowError extends Error {
+  constructor(public code: string, message: string) {
+    super(message);
+    this.name = 'WorkflowError';
+  }
 }
 
 export interface Issue {
@@ -13,145 +19,90 @@ export interface Issue {
   description: string | null;
   priority: number | null;
   state: string;
+  project_slug: string; // To route to correct repo
   branch_name: string | null;
   url: string | null;
   labels: string[];
-  blocked_by: BlockerRef[];
+  blocked_by: Array<{ id: string | null; identifier: string | null; state: string | null }>;
   created_at: Date | null;
   updated_at: Date | null;
 }
 
-export interface WorkflowDefinition {
-  config: Record<string, unknown>;
-  prompt_template: string;
+export interface Project {
+  name: string;
+  linear_project_slug: string;
+  repo_url: string;
+  target_branch: string;
 }
 
-export interface TrackerConfig {
-  kind: string;
-  endpoint: string;
+export interface ServiceConfig {
+  orchestrator: {
+    polling_interval_ms: number;
+    max_concurrent_agents: number;
+    max_attempts: number;
+    max_retry_backoff_ms: number;
+  };
+  tracker: {
+    backend: 'linear';
+    linear: {
+      api_key: string;
+      active_states: string[];
+      terminal_states: string[];
+      done_state: string;
+    };
+  };
+  projects: Project[];
+  workspace: {
+    root: string;
+  };
+  hooks: {
+    before_run: string;
+    after_run: string;
+    timeout_ms: number;
+  };
+  agent: {
+    backend: 'gemini' | 'claude';
+    gemini?: GeminiConfig;
+
+    claude?: ClaudeConfig;
+  };
+  server: {
+    port: number | null;
+  };
+}
+
+export interface GeminiKeyPool {
+  api_keys: string[];
+  current_index: number;
+}
+
+export interface GeminiConfig {
+  model: string | null;
+  max_turns: number;
   api_key: string;
-  project_slug: string;
-  active_states: string[];
-  terminal_states: string[];
-}
-
-export interface PollingConfig {
-  interval_ms: number;
-}
-
-export interface WorkspaceConfig {
-  root: string;
-}
-
-export interface HooksConfig {
-  after_create: string | null;
-  before_run: string | null;
-  after_run: string | null;
-  before_remove: string | null;
-  timeout_ms: number;
-}
-
-export interface AgentConfig {
-  max_concurrent_agents: number;
-  max_retry_backoff_ms: number;
-  max_concurrent_agents_by_state: Record<string, number>;
+  key_pool: GeminiKeyPool | null;
+  system_prompt: string | null;
+  turn_timeout_ms: number;
+  stall_timeout_ms: number;
+  temperature?: number;
+  sandbox?: string | null;
+  output_format: string;
 }
 
 export interface ClaudeConfig {
   command: string;
   model: string | null;
+  max_turns: number;
+  api_key: string;
   permission_mode: string | null;
   allowed_tools: string[];
   disallowed_tools: string[];
-  max_turns: number;
-  api_key: string;
   system_prompt: string | null;
   turn_timeout_ms: number;
   stall_timeout_ms: number;
 }
 
-export interface GeminiKeyPool {
-  /** List of GOOGLE_API_KEY values to rotate through on rate-limit errors */
-  api_keys: string[];
-  /** Index of the currently active key (managed at runtime) */
-  current_index: number;
-}
 
-export interface GeminiConfig {
-  command: string;
-  model: string | null;
-  max_turns: number;
-  /** Primary API key — also used as api_keys[0] if key_pool is empty */
-  api_key: string;
-  /** Optional pool of additional keys to rotate through on rate limits */
-  key_pool: GeminiKeyPool | null;
-  system_prompt: string | null;
-  turn_timeout_ms: number;
-  stall_timeout_ms: number;
-  sandbox: string | null;
-  output_format: string;
-}
-
-export interface FreebuffConfig {
-  command: string;
-  model: string | null;
-  max_turns: number;
-  turn_timeout_ms: number;
-  stall_timeout_ms: number;
-  /** true = use @codebuff/sdk (headless, requires api_key); false = CLI stdin mode */
-  use_sdk: boolean;
-  /** Codebuff API key — required when use_sdk is true */
-  api_key: string | null;
-  /** SDK agent identifier, e.g. 'codebuff/base@latest' */
-  agent: string;
-}
-
-export interface ServerConfig {
-  port: number | null;
-}
-
-export type AgentBackend = 'claude' | 'gemini' | 'freebuff';
-
-export interface ServiceConfig {
-  tracker: TrackerConfig;
-  polling: PollingConfig;
-  workspace: WorkspaceConfig;
-  hooks: HooksConfig;
-  agent: AgentConfig;
-  agent_backend: AgentBackend;
-  claude: ClaudeConfig;
-  gemini: GeminiConfig;
-  freebuff: FreebuffConfig;
-  server: ServerConfig;
-}
-
-export interface Workspace {
-  path: string;
-  workspace_key: string;
-  created_now: boolean;
-}
-
-export type RunAttemptStatus =
-  | 'PreparingWorkspace'
-  | 'BuildingPrompt'
-  | 'LaunchingAgentProcess'
-  | 'StreamingOutput'
-  | 'Finishing'
-  | 'Succeeded'
-  | 'Failed'
-  | 'TimedOut'
-  | 'Stalled'
-  | 'CanceledByReconciliation';
-
-export interface RunAttempt {
-  issue_id: string;
-  issue_identifier: string;
-  attempt: number | null;
-  workspace_path: string;
-  started_at: Date;
-  status: RunAttemptStatus;
-  error?: string;
-}
 
 export interface LiveSession {
   session_id: string | null;
@@ -208,19 +159,8 @@ export interface OrchestratorState {
   claude_rate_limits: RateLimitInfo | null;
 }
 
-// Agent runner upstream events
-export type AgentEventType =
-  | 'session_started'
-  | 'startup_failed'
-  | 'turn_completed'
-  | 'turn_failed'
-  | 'turn_stalled'
-  | 'notification'
-  | 'other_message'
-  | 'malformed';
-
 export interface AgentEvent {
-  event: AgentEventType;
+  event: 'session_started' | 'startup_failed' | 'turn_completed' | 'turn_failed' | 'turn_stalled' | 'notification' | 'other_message' | 'malformed';
   timestamp: Date;
   claude_pid: number | null;
   usage?: {
@@ -230,57 +170,23 @@ export interface AgentEvent {
     cost_usd?: number;
   };
   session_id?: string;
-  stop_reason?: string;
   message?: string;
   error?: string;
+  stop_reason?: string;
   rate_limits?: RateLimitInfo;
 }
 
-// Workflow error codes
-export type WorkflowErrorCode =
-  | 'missing_workflow_file'
-  | 'workflow_parse_error'
-  | 'workflow_front_matter_not_a_map'
-  | 'template_parse_error'
-  | 'template_render_error';
-
-export class WorkflowError extends Error {
-  constructor(
-    public readonly code: WorkflowErrorCode,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'WorkflowError';
-  }
+export interface TrackerConfig {
+  backend: 'linear';
+  endpoint: string;
+  api_key: string;
+  project_slugs: string[];
+  active_states: string[];
+  terminal_states: string[];
 }
-
-// Tracker error codes
-export type TrackerErrorCode =
-  | 'unsupported_tracker_kind'
-  | 'missing_tracker_api_key'
-  | 'missing_tracker_project_slug'
-  | 'linear_api_request'
-  | 'linear_api_status'
-  | 'linear_graphql_errors'
-  | 'linear_unknown_payload'
-  | 'linear_missing_end_cursor';
 
 export class TrackerError extends Error {
-  constructor(
-    public readonly code: TrackerErrorCode,
-    message: string,
-  ) {
+  constructor(public code: string, message: string) {
     super(message);
-    this.name = 'TrackerError';
   }
 }
-
-// Agent runner error codes
-export type AgentErrorCode =
-  | 'claude_not_found'
-  | 'invalid_workspace_cwd'
-  | 'turn_timeout'
-  | 'stall_timeout'
-  | 'subprocess_exit'
-  | 'turn_failed'
-  | 'prompt_render_failed';

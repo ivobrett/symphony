@@ -62,7 +62,7 @@ export function updateLiveSession(
   }
 
   if (event.event === 'turn_completed') ls.turn_count += 1;
-  if (event.rate_limits) state.claude_rate_limits = event.rate_limits;
+  if (event.rate_limits) state.claude_rate_limits = event.rate_limits as any;
 }
 
 export function addRetry(state: OrchestratorState, entry: RetryEntry): OrchestratorState {

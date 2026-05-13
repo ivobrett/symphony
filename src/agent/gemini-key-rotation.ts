@@ -14,9 +14,10 @@
  *     key_pool:
  *       - $GEMINI_KEY_2
  *       - $GEMINI_KEY_3
+ *       - $GEMINI_KEY_4
  *
  * Environment variables:
- *   GEMINI_KEY_1, GEMINI_KEY_2, GEMINI_KEY_3 …
+ *   GEMINI_KEY_1, GEMINI_KEY_2, GEMINI_KEY_3, GEMINI_KEY_4 …
  *
  * Each key represents a separate Google account. Symphony will rotate
  * through them automatically when it detects quota exhaustion.

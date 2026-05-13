@@ -33,7 +33,7 @@ export function scheduleRetry(
       candidates = await tracker.fetchCandidateIssues();
     } catch (err) {
       logger.warn({ err, issue_identifier: identifier }, `retry fetch failed for issue_identifier=${identifier}, requeuing`);
-      scheduleRetry(state, issueId, identifier, attempt + 1, `fetch_failed: ${(err as Error).message}`, computeBackoffMs(attempt + 1, config.agent.max_retry_backoff_ms), config, tracker, dispatchFn);
+      scheduleRetry(state, issueId, identifier, attempt + 1, `fetch_failed: ${(err as Error).message}`, computeBackoffMs(attempt + 1, config.orchestrator.max_retry_backoff_ms), config, tracker, dispatchFn);
       return;
     }
 
@@ -51,14 +51,23 @@ export function scheduleRetry(
       return;
     }
 
-    const slots = config.agent.max_concurrent_agents - state.running.size;
+    const slots = config.orchestrator.max_concurrent_agents - state.running.size;
     if (slots <= 0) {
       logger.info({ issue_identifier: identifier }, `no available orchestrator slots, requeuing issue_identifier=${identifier}`);
-      scheduleRetry(state, issueId, identifier, attempt, 'no available orchestrator slots', computeBackoffMs(attempt, config.agent.max_retry_backoff_ms), config, tracker, dispatchFn);
+      scheduleRetry(state, issueId, identifier, attempt, 'no available orchestrator slots', computeBackoffMs(attempt, config.orchestrator.max_retry_backoff_ms), config, tracker, dispatchFn);
       return;
     }
 
-    dispatchFn(issue, attempt);
+    const project = config.projects.find(p => p.linear_project_slug === issue.project_slug);
+    if (!project) {
+      logger.warn({ issue_identifier: identifier, project_slug: issue.project_slug }, 'no project config found during retry');
+      unclaim(state, issueId);
+      return;
+    }
+
+    // Unclaim so dispatch() won't skip this issue (it re-claims immediately)
+    unclaim(state, issueId);
+    dispatchFn(issue, project, attempt);
   }, delayMs);
 
   addRetry(state, { issue_id: issueId, identifier, attempt, due_at_ms: dueAtMs, timer_handle: handle, error: errorMsg });

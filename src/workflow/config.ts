@@ -1,199 +1,104 @@
-import * as os from 'os';
+import * as fs from 'fs';
+import * as yaml from 'js-yaml';
 import * as path from 'path';
-import { AgentBackend, FreebuffConfig, GeminiConfig, ServiceConfig, WorkflowDefinition } from '../domain';
+import { ServiceConfig, WorkflowDefinition } from '../domain';
 import { buildKeyPool } from '../agent/gemini-key-rotation';
 
-function resolveEnv(value: string | undefined | null): string {
-  if (!value) return '';
-  if (value.startsWith('$')) {
-    return process.env[value.slice(1)] ?? '';
+function resolveEnv(val: any): string {
+  if (typeof val !== 'string') return '';
+  if (val.startsWith('$')) {
+    const key = val.substring(1);
+    return process.env[key] || '';
   }
-  return value;
+  return val;
 }
 
-function resolvePath(value: string | undefined | null): string {
-  if (!value) return '';
-  const resolved = resolveEnv(value);
-  if (!resolved) return '';
-  if (resolved.startsWith('~')) {
-    return path.join(os.homedir(), resolved.slice(1));
-  }
-  if (resolved.includes(path.sep) || resolved.startsWith('/')) {
-    return path.resolve(resolved);
-  }
-  return resolved;
-}
-
-function toStringList(value: unknown): string[] {
-  if (!value) return [];
-  if (Array.isArray(value)) return value.map(String);
-  if (typeof value === 'string') return value.split(',').map((s) => s.trim()).filter(Boolean);
-  return [];
-}
-
-function toPositiveInt(value: unknown, defaultVal: number): number {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return defaultVal;
-  return Math.floor(n);
-}
-
-function toInt(value: unknown, defaultVal: number): number {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return defaultVal;
-  return Math.floor(n);
-}
-
-function section(config: Record<string, unknown>, key: string): Record<string, unknown> {
-  const s = config[key];
-  if (s && typeof s === 'object' && !Array.isArray(s)) return s as Record<string, unknown>;
-  return {};
+function toStringList(val: any): string[] {
+  if (!val) return [];
+  if (Array.isArray(val)) return val.map(v => String(v));
+  return [String(val)];
 }
 
 export function buildServiceConfig(workflow: WorkflowDefinition): ServiceConfig {
-  const cfg = workflow.config;
-  const tracker = section(cfg, 'tracker');
-  const polling = section(cfg, 'polling');
-  const workspace = section(cfg, 'workspace');
-  const hooks = section(cfg, 'hooks');
-  const agent = section(cfg, 'agent');
-  const claude = section(cfg, 'claude');
-  const geminiCfg = section(cfg, 'gemini');
-  const freebuffCfg = section(cfg, 'freebuff');
-  const server = section(cfg, 'server');
+  const cfg = workflow.config || {};
+  const orchCfg = (cfg.orchestrator as any) || {};
+  const trackerCfg = (cfg.tracker as any) || {};
+  const linearCfg = (trackerCfg.linear as any) || {};
+  const agentCfg = (cfg.agent as any) || {};
+  const geminiCfg = (cfg.gemini as any) || {};
+const claudeCfg = (cfg.claude as any) || {};
+  const projects = (cfg.projects as any[]) || [];
+  const hooksCfg = (cfg.hooks as any) || {};
+  const workspaceCfg = (cfg.workspace as any) || {};
 
-  const trackerKind = String(tracker['kind'] ?? '');
-  const isLinear = trackerKind === 'linear';
-
-  const activeStates = toStringList(tracker['active_states']);
-  const terminalStates = toStringList(tracker['terminal_states']);
-
-  const byStateRaw = section(agent, 'max_concurrent_agents_by_state');
-  const byState: Record<string, number> = {};
-  for (const [k, v] of Object.entries(byStateRaw)) {
-    const n = Number(v);
-    if (Number.isFinite(n) && n > 0) byState[k.trim().toLowerCase()] = Math.floor(n);
-  }
-
-  const workspaceRoot = resolvePath(String(workspace['root'] ?? '')) ||
-    path.join(os.tmpdir(), 'symphony_workspaces');
-
-  const hookTimeout = toPositiveInt(hooks['timeout_ms'], 60000);
-
-  const claudeApiKey = resolveEnv(String(claude['api_key'] ?? '$ANTHROPIC_API_KEY'));
-  const trackerApiKey = resolveEnv(String(tracker['api_key'] ?? (isLinear ? '$LINEAR_API_KEY' : '')));
-
-  // Determine agent backend — defaults to 'claude' for backward compat
-  const rawBackend = String(agent['backend'] ?? cfg['agent_backend'] ?? 'claude');
-  const agentBackend: AgentBackend = (['claude', 'gemini', 'freebuff'].includes(rawBackend)
-    ? rawBackend
-    : 'claude') as AgentBackend;
-
-  // ── Gemini config ──────────────────────────────────────────────────────────
-  const geminiPrimaryKey = resolveEnv(String(geminiCfg['api_key'] ?? '$GOOGLE_API_KEY'));
-
-  // Additional keys for round-robin rotation (array of env var names or literals)
-  const rawExtraKeys = toStringList(geminiCfg['key_pool']);
-  const extraKeys = rawExtraKeys.map(resolveEnv).filter(Boolean);
-
-  const geminiKeyPool = (geminiPrimaryKey || extraKeys.length > 0)
-    ? buildKeyPool(geminiPrimaryKey, extraKeys)
-    : null;
-
-  const geminiConfig: GeminiConfig = {
-    command: String(geminiCfg['command'] ?? 'gemini'),
-    model: (geminiCfg['model'] as string) ?? null,
-    max_turns: toPositiveInt(geminiCfg['max_turns'], 20),
-    api_key: geminiPrimaryKey,
-    key_pool: geminiKeyPool,
-    system_prompt: (geminiCfg['system_prompt'] as string) ?? null,
-    turn_timeout_ms: toPositiveInt(geminiCfg['turn_timeout_ms'], 3600000),
-    stall_timeout_ms: toInt(geminiCfg['stall_timeout_ms'], 300000),
-    sandbox: (geminiCfg['sandbox'] as string) ?? null,
-    output_format: String(geminiCfg['output_format'] ?? 'text'),
-  };
-
-  // ── Freebuff config ────────────────────────────────────────────────────────
-  const freebuffConfig: FreebuffConfig = {
-    command: String(freebuffCfg['command'] ?? 'freebuff'),
-    model: (freebuffCfg['model'] as string) ?? null,
-    max_turns: toPositiveInt(freebuffCfg['max_turns'], 20),
-    turn_timeout_ms: toPositiveInt(freebuffCfg['turn_timeout_ms'], 3600000),
-    stall_timeout_ms: toInt(freebuffCfg['stall_timeout_ms'], 300000),
-    use_sdk: Boolean(freebuffCfg['use_sdk'] ?? false),
-    api_key: resolveEnv(String(freebuffCfg['api_key'] ?? '$CODEBUFF_API_KEY')) || null,
-    agent: String(freebuffCfg['agent'] ?? 'codebuff/base@latest'),
-  };
+  const primaryGeminiKey = resolveEnv(geminiCfg.api_key);
+  const additionalGeminiKeys = toStringList(geminiCfg.key_pool).map(resolveEnv);
 
   return {
+    orchestrator: {
+      polling_interval_ms: Number(orchCfg.polling_interval_ms) || 30000,
+      max_concurrent_agents: Number(orchCfg.max_concurrent_agents) || 1,
+      max_attempts: Number(orchCfg.max_attempts) || 3,
+      max_retry_backoff_ms: Number(orchCfg.max_retry_backoff_ms) || 300000,
+    },
     tracker: {
-      kind: trackerKind,
-      endpoint: String(tracker['endpoint'] ?? (isLinear ? 'https://api.linear.app/graphql' : '')),
-      api_key: trackerApiKey,
-      project_slug: String(tracker['project_slug'] ?? ''),
-      active_states: activeStates.length > 0 ? activeStates : ['Todo', 'In Progress'],
-      terminal_states: terminalStates.length > 0 ? terminalStates : ['Closed', 'Cancelled', 'Canceled', 'Duplicate', 'Done'],
+      backend: trackerCfg.backend || 'linear',
+      linear: {
+        api_key: resolveEnv(linearCfg.api_key),
+        active_states: toStringList(linearCfg.active_states).length > 0 ? toStringList(linearCfg.active_states) : ['Todo', 'To Do', 'In Progress', 'Triage'],
+        terminal_states: toStringList(linearCfg.terminal_states).length > 0 ? toStringList(linearCfg.terminal_states) : ['Done', 'Cancelled', 'Canceled', 'Duplicate', 'Closed'],
+        done_state: String(linearCfg.done_state || 'Done'),
+      },
     },
-    polling: {
-      interval_ms: toPositiveInt(polling['interval_ms'], 30000),
-    },
+    projects: projects.map(p => ({
+      name: p.name || 'Unnamed Project',
+      linear_project_slug: p.linear_project_slug || '',
+      repo_url: resolveEnv(p.repo_url),
+      target_branch: p.target_branch || 'main'
+    })),
     workspace: {
-      root: workspaceRoot,
+      root: workspaceCfg.root || path.join(process.cwd(), 'workspaces'),
     },
     hooks: {
-      after_create: (hooks['after_create'] as string) ?? null,
-      before_run: (hooks['before_run'] as string) ?? null,
-      after_run: (hooks['after_run'] as string) ?? null,
-      before_remove: (hooks['before_remove'] as string) ?? null,
-      timeout_ms: hookTimeout,
+      before_run: hooksCfg.before_run || '',
+      after_run: hooksCfg.after_run || '',
+      timeout_ms: Number(hooksCfg.timeout_ms) || 300000,
     },
     agent: {
-      max_concurrent_agents: toPositiveInt(agent['max_concurrent_agents'], 10),
-      max_retry_backoff_ms: toPositiveInt(agent['max_retry_backoff_ms'], 300000),
-      max_concurrent_agents_by_state: byState,
+      backend: agentCfg.backend || 'gemini',
+      gemini: {
+        model: geminiCfg.model || null,
+        max_turns: Number(geminiCfg.max_turns) || 20,
+        api_key: primaryGeminiKey,
+        key_pool: buildKeyPool(primaryGeminiKey, additionalGeminiKeys),
+        system_prompt: geminiCfg.system_prompt || null,
+        turn_timeout_ms: Number(geminiCfg.turn_timeout_ms) || 3600000,
+        stall_timeout_ms: Number(geminiCfg.stall_timeout_ms) || 300000,
+        sandbox: geminiCfg.sandbox || null,
+        output_format: geminiCfg.output_format || 'json',
+      },
+      claude: {
+        command: String(claudeCfg.command ?? 'claude'),
+        model: claudeCfg.model || null,
+        max_turns: Number(claudeCfg.max_turns) || 20,
+        api_key: resolveEnv(claudeCfg.api_key || '$ANTHROPIC_API_KEY'),
+        permission_mode: String(claudeCfg.permission_mode ?? 'bypassPermissions'),
+        allowed_tools: toStringList(claudeCfg.allowed_tools),
+        disallowed_tools: toStringList(claudeCfg.disallowed_tools),
+        system_prompt: claudeCfg.system_prompt || null,
+        turn_timeout_ms: Number(claudeCfg.turn_timeout_ms) || 3600000,
+        stall_timeout_ms: Number(claudeCfg.stall_timeout_ms) || 300000,
+      },
     },
-    agent_backend: agentBackend,
-    claude: {
-      command: String(claude['command'] ?? 'claude'),
-      model: (claude['model'] as string) ?? null,
-      permission_mode: (claude['permission_mode'] as string) ?? 'bypassPermissions',
-      allowed_tools: toStringList(claude['allowed_tools']),
-      disallowed_tools: toStringList(claude['disallowed_tools']),
-      max_turns: toPositiveInt(claude['max_turns'], 20),
-      api_key: claudeApiKey,
-      system_prompt: (claude['system_prompt'] as string) ?? null,
-      turn_timeout_ms: toPositiveInt(claude['turn_timeout_ms'], 3600000),
-      stall_timeout_ms: toInt(claude['stall_timeout_ms'], 300000),
-    },
-    gemini: geminiConfig,
-    freebuff: freebuffConfig,
     server: {
-      port: server['port'] != null ? toPositiveInt(server['port'], 0) || null : null,
-    },
+      port: Number((cfg.server as any)?.port) || 3000,
+    }
   };
 }
 
 export function validateDispatchConfig(config: ServiceConfig): string[] {
   const errors: string[] = [];
-
-  if (!config.tracker.kind) errors.push('tracker.kind is required');
-  if (config.tracker.kind !== 'linear') errors.push(`tracker.kind "${config.tracker.kind}" is not supported`);
-  if (!config.tracker.api_key) errors.push('tracker.api_key is missing or empty after $VAR resolution');
-  if (!config.tracker.project_slug) errors.push('tracker.project_slug is required for linear');
-
-  const backend = config.agent_backend;
-  if (backend === 'claude') {
-    if (!config.claude.command) errors.push('claude.command is required');
-    if (!config.claude.api_key) errors.push('claude.api_key (ANTHROPIC_API_KEY) is missing or empty');
-  } else if (backend === 'gemini') {
-    if (!config.gemini.command) errors.push('gemini.command is required');
-    if (!config.gemini.api_key && (!config.gemini.key_pool || config.gemini.key_pool.api_keys.length === 0)) {
-      errors.push('gemini.api_key (GOOGLE_API_KEY) is missing — set api_key or key_pool in [gemini] config');
-    }
-  } else if (backend === 'freebuff') {
-    if (!config.freebuff.command) errors.push('freebuff.command is required');
-  } else {
-    errors.push(`unknown agent_backend: "${String(backend)}" — must be claude, gemini, or freebuff`);
-  }
-
+  if (!config.tracker.linear.api_key) errors.push('Missing tracker API key');
+  if (config.projects.length === 0) errors.push('No projects configured');
   return errors;
 }
