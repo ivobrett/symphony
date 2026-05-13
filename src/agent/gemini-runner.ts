@@ -141,6 +141,9 @@ export async function runGeminiAgent(
   };
   cancelSignal.addEventListener('abort', onCancel);
 
+  // Buffer all stdout so we can parse the final Gemini JSON stats blob (which is
+  // pretty-printed across many lines) and extract just the `response` field.
+  const stdoutLines: string[] = [];
   const rl = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
 
   rl.on('line', (line) => {
@@ -150,6 +153,7 @@ export async function runGeminiAgent(
     }
 
     logger.debug({ issue_identifier: issue.identifier }, `gemini stdout: ${line.slice(0, 500)}`);
+    stdoutLines.push(line);
 
     // Check for rate limit signals in output
     if (isRateLimitError(line)) {
@@ -158,13 +162,14 @@ export async function runGeminiAgent(
     }
 
     if (config.output_format === 'json') {
-      let parsed: Record<string, unknown>;
+      // Try single-line JSON first (intermediate events)
       try {
-        parsed = JSON.parse(line) as Record<string, unknown>;
+        const parsed = JSON.parse(line) as Record<string, unknown>;
         handleJsonEvent(parsed, pid, sessionId, callbacks);
         return;
       } catch {
-        // fall through to plain text
+        // Multi-line JSON or plain text — buffered above, handled on close
+        return;
       }
     }
 
@@ -205,6 +210,26 @@ export async function runGeminiAgent(
       fs.unlink(promptFile, () => {});
 
       fs.rm(tmpHome, { recursive: true, force: true }, () => {});
+
+      // Try to parse the full buffered stdout as a Gemini JSON stats blob and
+      // extract just the `response` field for a clean agent summary.
+      if (config.output_format === 'json' && stdoutLines.length > 0) {
+        try {
+          const full = stdoutLines.join('\n');
+          const parsed = JSON.parse(full) as Record<string, unknown>;
+          const response = typeof parsed['response'] === 'string' ? parsed['response'].trim() : '';
+          if (response) {
+            callbacks.onEvent({ event: 'notification', timestamp: new Date(), claude_pid: pid, session_id: sessionId, message: response });
+          }
+        } catch {
+          // Not a JSON blob — emit buffered lines as plain text notifications
+          for (const line of stdoutLines) {
+            if (line.trim()) {
+              callbacks.onEvent({ event: 'notification', timestamp: new Date(), claude_pid: pid, session_id: sessionId, message: line.slice(0, 200) });
+            }
+          }
+        }
+      }
 
       if (done) { resolve(); return; }
       done = true;
