@@ -211,8 +211,9 @@ export async function runGeminiAgent(
 
       fs.rm(tmpHome, { recursive: true, force: true }, () => {});
 
-      // Try to parse the full buffered stdout as a Gemini JSON stats blob and
-      // extract just the `response` field for a clean agent summary.
+      // Try to parse the full buffered stdout as a Gemini JSON stats blob.
+      // Extract the `response` field for a clean summary, falling back to
+      // a stats-derived summary when the agent didn't produce text output.
       if (config.output_format === 'json' && stdoutLines.length > 0) {
         try {
           const full = stdoutLines.join('\n');
@@ -220,6 +221,18 @@ export async function runGeminiAgent(
           const response = typeof parsed['response'] === 'string' ? parsed['response'].trim() : '';
           if (response) {
             callbacks.onEvent({ event: 'notification', timestamp: new Date(), claude_pid: pid, session_id: sessionId, message: response });
+          } else {
+            // Build a minimal summary from the stats when response is empty
+            const files = (parsed['stats'] as any)?.files;
+            const tools = (parsed['stats'] as any)?.tools;
+            const parts: string[] = [];
+            if (tools?.totalCalls) parts.push(`${tools.totalCalls} tool calls`);
+            if (files?.totalLinesAdded || files?.totalLinesRemoved) {
+              parts.push(`+${files.totalLinesAdded ?? 0}/-${files.totalLinesRemoved ?? 0} lines`);
+            }
+            if (parts.length > 0) {
+              callbacks.onEvent({ event: 'notification', timestamp: new Date(), claude_pid: pid, session_id: sessionId, message: `Agent completed (${parts.join(', ')})` });
+            }
           }
         } catch {
           // Not a JSON blob — emit buffered lines as plain text notifications
