@@ -1,0 +1,117 @@
+---
+# Symphony Multi-Project Configuration — Auggie Backend Example
+#
+# Auggie is Augment Code's CLI agent. Authenticate once with `auggie login`;
+# Symphony does not pass an API key — Auggie uses its own credential store.
+# See: https://docs.augmentcode.com/cli
+
+orchestrator:
+  polling_interval_ms: 30000
+  max_concurrent_agents: 5
+  max_attempts: 3
+
+tracker:
+  backend: linear
+  linear:
+    api_key: $LINEAR_API_KEY
+    active_states:
+      - Todo
+      - To Do
+      - In Progress
+      - Triage
+    done_state: Done
+
+# Project Routing Map — maps Linear project slugs to GitHub repos.
+# Find your project slug in Linear: Settings → Projects → copy the slug from the URL.
+projects:
+  - name: "My Project"
+    linear_project_slug: "your-project-slug-here"
+    repo_url: "https://github.com/your-org/your-repo.git"
+    target_branch: "main"
+
+  - name: "Another Project"
+    linear_project_slug: "another-project-slug"
+    repo_url: "https://github.com/your-org/another-repo.git"
+    target_branch: "main"
+
+workspace:
+  root: ~/symphony_workspaces
+
+hooks:
+  timeout_ms: 600000
+  before_run: |
+    echo "Setting up workspace for {{issue_identifier}} in {{repo_name}}..."
+    git clone {{repo_url}} .
+    git checkout {{target_branch}}
+    git checkout -b agent/{{issue_identifier}}
+
+    # Sync local .env files from ~/Projects/{{repo_name}} into the workspace.
+    # Repos typically gitignore .env files, but local builds/tests need them.
+    SRC_DIR="$HOME/Projects/{{repo_name}}"
+    for f in .env .env.local backend/.env frontend/.env frontend/.env.local; do
+      if [ -f "$SRC_DIR/$f" ]; then
+        mkdir -p "$(dirname "$f")"
+        cp "$SRC_DIR/$f" "$f"
+      fi
+    done
+
+  after_run: |
+    set -e
+    git push origin agent/{{issue_identifier}} --force
+    gh pr create --repo {{repo_url}} \
+      --title '{{issue_identifier}}: {{issue_title}}' \
+      --body '{{agent_summary}}'
+
+agent:
+  backend: auggie
+
+auggie:
+  # Path or name of the Auggie CLI binary on PATH.
+  command: auggie
+
+  # Model short-name passed to `auggie --model`. Run `auggie models list`
+  # for the up-to-date catalogue. Common choices:
+  #   prism-a       Routes Claude Opus 4.8 / Sonnet 4.6 / Gemini 3.0 Flash
+  #   prism-b       Routes GPT-5.5 / GPT-5.4 / Kimi K2.6
+  #   sonnet4.5     Great for everyday tasks
+  #   sonnet4.6     Latest Sonnet with improved capabilities
+  #   opus4.7       Complex, multi-step agentic tasks
+  #   opus4.8       Latest Opus
+  #   haiku4.5      Fast and efficient
+  #   gemini-3.1-pro-preview
+  #   gpt5.5
+  # Leave unset to use Auggie's account default.
+  model: sonnet4.5
+
+  # Maximum agentic turns per session.
+  max_turns: 50
+
+  # Optional path to an extra rules file appended to workspace guidelines
+  # (passed through as `auggie --rules <path>`).
+  # rules_file: ~/Projects/{{repo_name}}/.augment/rules.md
+
+  # Optional system prompt prepended to every issue prompt below.
+  # system_prompt: |
+  #   You are a senior engineer working on production code.
+  #   Always run tests before finishing.
+
+  turn_timeout_ms: 3600000
+  stall_timeout_ms: 300000
+
+server:
+  port: 3000
+---
+
+You are an expert coding agent. Your goal is to resolve the provided issue: {{issue.identifier}} - {{issue.title}}.
+
+Issue Description:
+{{issue.description}}
+
+{% if attempt %}
+A previous session ran on this workspace. Check the current state of the codebase
+and resume work — do not start from scratch.
+{% endif %}
+
+Use the available tools to explore the codebase, edit files, and run tests.
+Always use git commit after making changes.
+When done, provide a concise summary of your work.

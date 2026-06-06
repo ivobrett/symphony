@@ -1,6 +1,6 @@
 # Symphony
 
-Symphony is an adaption of OpenAI's Symphony which provides a long-running automation service that orchestrates coding agents (Claude Code or Gemini) to work on software issues across multiple repositories. It continuously polls Linear for eligible issues, routes each one to the correct repository, creates an isolated workspace, and runs an AI agent to implement the fix — automatically creating a pull request and moving the issue to Done when complete.
+Symphony is an adaption of OpenAI's Symphony which provides a long-running automation service that orchestrates coding agents (Claude Code, Gemini, or Auggie) to work on software issues across multiple repositories. It continuously polls Linear for eligible issues, routes each one to the correct repository, creates an isolated workspace, and runs an AI agent to implement the fix — automatically creating a pull request and moving the issue to Done when complete.
 
 ## How It Works
 
@@ -84,6 +84,10 @@ Symphony reads that stream to update live session state and detect stalls, but d
 - [Gemini CLI](https://github.com/google-gemini/gemini-cli) (`npm install -g @google/gemini-cli`)
 - A [Google AI Studio API key](https://aistudio.google.com/apikey) — free tier gives 20 requests/day per key; add multiple keys via `key_pool` to rotate through them automatically
 
+**For the Auggie backend** (`agent.backend: auggie`):
+- [Auggie CLI](https://docs.augmentcode.com/cli) (`npm install -g @augmentcode/auggie`)
+- Authenticate once with `auggie login` — no API key is read from the environment; Auggie uses its own credential store
+
 ## Installation
 
 ```bash
@@ -115,6 +119,12 @@ For the Gemini backend:
 export LINEAR_API_KEY=lin_api_...
 export GEMINI_API_KEY=AIzaSy...       # primary key
 export GEMINI_KEY_2=AIzaSy...         # optional additional keys for rotation
+```
+
+For the Auggie backend:
+```bash
+export LINEAR_API_KEY=lin_api_...
+auggie login                          # one-time interactive login; no env var needed
 ```
 
 **3. Run**
