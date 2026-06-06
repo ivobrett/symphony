@@ -1,0 +1,121 @@
+---
+# Symphony Multi-Project Configuration — KiloCode CLI Backend Example
+#
+# KiloCode CLI (kilo) runs AI coding agents in fully autonomous mode.
+# Authenticate once with `kilo auth` or the interactive `/connect` command;
+# no API key is required in this file when using Kilo Gateway models.
+# See: https://kilo.ai/docs/cli
+#
+# Prerequisites:
+#   npm install -g @kilocode/cli
+#   kilo auth                  # one-time Kilo Gateway login
+#   kilo --version             # verify installation
+
+orchestrator:
+  polling_interval_ms: 30000
+  max_concurrent_agents: 5
+  max_attempts: 3
+
+tracker:
+  backend: linear
+  linear:
+    api_key: $LINEAR_API_KEY
+    active_states:
+      - Todo
+      - To Do
+      - In Progress
+      - Triage
+    done_state: Done
+
+# Project Routing Map — maps Linear project slugs to GitHub repos.
+# Find your project slug in Linear: Settings → Projects → copy the slug from the URL.
+projects:
+  - name: "My Project"
+    linear_project_slug: "your-project-slug-here"
+    repo_url: "https://github.com/your-org/your-repo.git"
+    target_branch: "main"
+
+  - name: "Another Project"
+    linear_project_slug: "another-project-slug"
+    repo_url: "https://github.com/your-org/another-repo.git"
+    target_branch: "main"
+
+workspace:
+  root: ~/symphony_workspaces
+
+hooks:
+  timeout_ms: 600000
+  before_run: |
+    echo "Setting up workspace for {{issue_identifier}} in {{repo_name}}..."
+    git clone {{repo_url}} .
+    git checkout {{target_branch}}
+    git checkout -b agent/{{issue_identifier}}
+
+    # Sync local .env files from ~/Projects/{{repo_name}} into the workspace.
+    # Repos typically gitignore .env files, but local builds/tests need them.
+    SRC_DIR="$HOME/Projects/{{repo_name}}"
+    for f in .env .env.local backend/.env frontend/.env frontend/.env.local; do
+      if [ -f "$SRC_DIR/$f" ]; then
+        mkdir -p "$(dirname "$f")"
+        cp "$SRC_DIR/$f" "$f"
+      fi
+    done
+
+  after_run: |
+    set -e
+    git push origin agent/{{issue_identifier}} --force
+    gh pr create --repo {{repo_url}} \
+      --title '{{issue_identifier}}: {{issue_title}}' \
+      --body '{{agent_summary}}'
+
+agent:
+  backend: kilo
+
+kilo:
+  # Path or name of the Kilo CLI binary on PATH.
+  command: kilo
+
+  # Model in provider/model-id format. Run `kilo models` for the full list.
+  # Common choices (free tier available via Kilo Gateway):
+  #   nvidia/nemotron-3-super-120b-a12b:free   NVIDIA Nemotron 3 Super 120B — FREE
+  #   nvidia/nemotron-3-super-120b-a12b         (paid, higher rate limits)
+  #
+  # Paid Kilo Gateway models:
+  #   anthropic/claude-sonnet-4-20250514        Claude Sonnet 4
+  #   anthropic/claude-opus-4-20250514          Claude Opus 4
+  #   google/gemini-2.5-pro                     Gemini 2.5 Pro
+  #   openai/gpt-4o                             GPT-4o
+  #
+  # Custom / self-hosted providers can be registered in
+  # ~/.config/kilo/opencode.json under `provider.<id>.models`.
+  model: nvidia/nemotron-3-super-120b-a12b:free
+
+  # Agent mode: code (default), architect, ask, debug, orchestrator.
+  # Leave unset to use kilo's default (code mode).
+  # agent_mode: code
+
+  # Optional system prompt prepended to every issue prompt below.
+  # system_prompt: |
+  #   You are a senior engineer working on production code.
+  #   Always run existing tests before finishing.
+
+  turn_timeout_ms: 3600000
+  stall_timeout_ms: 300000
+
+server:
+  port: 3000
+---
+
+You are an expert coding agent. Your goal is to resolve the provided issue: {{issue.identifier}} - {{issue.title}}.
+
+Issue Description:
+{{issue.description}}
+
+{% if attempt %}
+A previous session ran on this workspace. Check the current state of the codebase
+and resume work — do not start from scratch.
+{% endif %}
+
+Use the available tools to explore the codebase, edit files, and run tests.
+Always use git commit after making changes.
+When done, provide a concise summary of your work.

@@ -61,11 +61,11 @@ export interface ServiceConfig {
     timeout_ms: number;
   };
   agent: {
-    backend: 'gemini' | 'claude' | 'auggie';
+    backend: 'gemini' | 'claude' | 'auggie' | 'kilo';
     gemini?: GeminiConfig;
-
     claude?: ClaudeConfig;
     auggie?: AuggieConfig;
+    kilo?: KiloConfig;
   };
   server: {
     port: number | null;
@@ -101,6 +101,15 @@ export interface ClaudeConfig {
   system_prompt: string | null;
   turn_timeout_ms: number;
   base_url: string | null;
+  stall_timeout_ms: number;
+}
+
+export interface KiloConfig {
+  command: string;
+  model: string | null;
+  agent_mode: string | null;
+  system_prompt: string | null;
+  turn_timeout_ms: number;
   stall_timeout_ms: number;
 }
 

@@ -12,6 +12,7 @@ import { runHook } from '../workspace/hooks';
 import { runGeminiAgent } from '../agent/gemini-runner';
 import { runAgent as runClaudeAgent } from '../agent/runner';
 import { runAuggieAgent } from '../agent/auggie-runner';
+import { runKiloAgent } from '../agent/kilo-runner';
 import { createInitialState, addRunning, removeRunning, unclaim, claim, updateLiveSession, removeRetry, accumulateRuntime } from './state';
 import { isEligible, sortForDispatch } from './dispatch';
 import { reconcileStalls, reconcileTrackerStates } from './reconcile';
@@ -340,6 +341,8 @@ export class Orchestrator {
         await runClaudeAgent(issue, attempt, entry.workspace_path, this.config.agent.claude, this.promptTemplate, { onEvent }, cancelSignal);
       } else if (backend === 'auggie' && this.config.agent.auggie) {
         await runAuggieAgent(issue, attempt, entry.workspace_path, this.config.agent.auggie, this.promptTemplate, { onEvent }, cancelSignal);
+      } else if (backend === 'kilo' && this.config.agent.kilo) {
+        await runKiloAgent(issue, attempt, entry.workspace_path, this.config.agent.kilo, this.promptTemplate, { onEvent }, cancelSignal);
       } else {
         throw new Error(`Unsupported backend or missing config: ${backend}`);
       }

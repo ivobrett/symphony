@@ -28,6 +28,7 @@ export function buildServiceConfig(workflow: WorkflowDefinition): ServiceConfig 
   const geminiCfg = (cfg.gemini as any) || {};
 const claudeCfg = (cfg.claude as any) || {};
   const auggieCfg = (cfg.auggie as any) || {};
+  const kiloCfg = (cfg.kilo as any) || {};
   const projects = (cfg.projects as any[]) || [];
   const hooksCfg = (cfg.hooks as any) || {};
   const workspaceCfg = (cfg.workspace as any) || {};
@@ -100,6 +101,14 @@ const claudeCfg = (cfg.claude as any) || {};
         turn_timeout_ms: Number(auggieCfg.turn_timeout_ms) || 3600000,
         stall_timeout_ms: Number(auggieCfg.stall_timeout_ms) || 300000,
         quiet: auggieCfg.quiet === true,
+      },
+      kilo: {
+        command: String(kiloCfg.command ?? 'kilo'),
+        model: kiloCfg.model || null,
+        agent_mode: kiloCfg.agent_mode || null,
+        system_prompt: kiloCfg.system_prompt || null,
+        turn_timeout_ms: Number(kiloCfg.turn_timeout_ms) || 3600000,
+        stall_timeout_ms: Number(kiloCfg.stall_timeout_ms) || 300000,
       },
     },
     server: {
