@@ -75,6 +75,7 @@ export async function runAgent(
   const env: NodeJS.ProcessEnv = { ...process.env };
   delete env['CLAUDECODE']; // prevent "nested session" rejection
   if (config.api_key) env['ANTHROPIC_API_KEY'] = config.api_key;
+  if (config.base_url) env['ANTHROPIC_BASE_URL'] = config.base_url;
 
   const child = spawn('bash', ['-lc', command], {
     cwd: resolvedWs,

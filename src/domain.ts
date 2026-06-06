@@ -61,10 +61,11 @@ export interface ServiceConfig {
     timeout_ms: number;
   };
   agent: {
-    backend: 'gemini' | 'claude';
+    backend: 'gemini' | 'claude' | 'auggie';
     gemini?: GeminiConfig;
 
     claude?: ClaudeConfig;
+    auggie?: AuggieConfig;
   };
   server: {
     port: number | null;
@@ -99,7 +100,19 @@ export interface ClaudeConfig {
   disallowed_tools: string[];
   system_prompt: string | null;
   turn_timeout_ms: number;
+  base_url: string | null;
   stall_timeout_ms: number;
+}
+
+export interface AuggieConfig {
+  command: string;
+  model: string | null;
+  max_turns: number;
+  system_prompt: string | null;
+  rules_file: string | null;
+  turn_timeout_ms: number;
+  stall_timeout_ms: number;
+  quiet: boolean;
 }
 
 

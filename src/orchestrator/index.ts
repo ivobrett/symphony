@@ -11,6 +11,7 @@ import { removeWorkspace } from '../workspace/manager';
 import { runHook } from '../workspace/hooks';
 import { runGeminiAgent } from '../agent/gemini-runner';
 import { runAgent as runClaudeAgent } from '../agent/runner';
+import { runAuggieAgent } from '../agent/auggie-runner';
 import { createInitialState, addRunning, removeRunning, unclaim, claim, updateLiveSession, removeRetry, accumulateRuntime } from './state';
 import { isEligible, sortForDispatch } from './dispatch';
 import { reconcileStalls, reconcileTrackerStates } from './reconcile';
@@ -337,6 +338,8 @@ export class Orchestrator {
         await runGeminiAgent(issue, attempt, entry.workspace_path, this.config.agent.gemini, this.promptTemplate, { onEvent }, cancelSignal);
       } else if (backend === 'claude' && this.config.agent.claude) {
         await runClaudeAgent(issue, attempt, entry.workspace_path, this.config.agent.claude, this.promptTemplate, { onEvent }, cancelSignal);
+      } else if (backend === 'auggie' && this.config.agent.auggie) {
+        await runAuggieAgent(issue, attempt, entry.workspace_path, this.config.agent.auggie, this.promptTemplate, { onEvent }, cancelSignal);
       } else {
         throw new Error(`Unsupported backend or missing config: ${backend}`);
       }

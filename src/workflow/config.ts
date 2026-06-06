@@ -27,6 +27,7 @@ export function buildServiceConfig(workflow: WorkflowDefinition): ServiceConfig 
   const agentCfg = (cfg.agent as any) || {};
   const geminiCfg = (cfg.gemini as any) || {};
 const claudeCfg = (cfg.claude as any) || {};
+  const auggieCfg = (cfg.auggie as any) || {};
   const projects = (cfg.projects as any[]) || [];
   const hooksCfg = (cfg.hooks as any) || {};
   const workspaceCfg = (cfg.workspace as any) || {};
@@ -87,7 +88,18 @@ const claudeCfg = (cfg.claude as any) || {};
         disallowed_tools: toStringList(claudeCfg.disallowed_tools),
         system_prompt: claudeCfg.system_prompt || null,
         turn_timeout_ms: Number(claudeCfg.turn_timeout_ms) || 3600000,
+        base_url: resolveEnv(claudeCfg.base_url || '' ) || null,
         stall_timeout_ms: Number(claudeCfg.stall_timeout_ms) || 300000,
+      },
+      auggie: {
+        command: String(auggieCfg.command ?? 'auggie'),
+        model: auggieCfg.model || null,
+        max_turns: Number(auggieCfg.max_turns) || 30,
+        system_prompt: auggieCfg.system_prompt || null,
+        rules_file: auggieCfg.rules_file || null,
+        turn_timeout_ms: Number(auggieCfg.turn_timeout_ms) || 3600000,
+        stall_timeout_ms: Number(auggieCfg.stall_timeout_ms) || 300000,
+        quiet: auggieCfg.quiet === true,
       },
     },
     server: {
