@@ -72,10 +72,12 @@ export async function runAgent(
     `launching claude code issue_id=${issue.id} issue_identifier=${issue.identifier}`,
   );
 
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  delete env['CLAUDECODE']; // prevent "nested session" rejection
-  if (config.api_key) env['ANTHROPIC_API_KEY'] = config.api_key;
-  if (config.base_url) env['ANTHROPIC_BASE_URL'] = config.base_url;
+   const env: NodeJS.ProcessEnv = { ...process.env };
+   delete env['CLAUDECODE']; // prevent "nested session" rejection
+   if (config.api_key) env['ANTHROPIC_API_KEY'] = config.api_key;
+   if (config.base_url) env['ANTHROPIC_BASE_URL'] = config.base_url;
+   // Pass through GH_TOKEN for GitHub operations
+   if (process.env.GH_TOKEN) env['GH_TOKEN'] = process.env.GH_TOKEN;
 
   const child = spawn('bash', ['-lc', command], {
     cwd: resolvedWs,

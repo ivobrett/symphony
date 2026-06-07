@@ -1,0 +1,3 @@
+     198 /tmp/kilo-smoke.out
+     178 /tmp/kilo-smoke.err
+     376 total

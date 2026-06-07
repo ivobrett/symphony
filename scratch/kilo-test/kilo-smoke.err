@@ -1,0 +1,3 @@
+[91m[1mError: [0mModel not found: nvidia/nemotron-3-super-120b-a12b:free
+Try: `kilo models` to list available models
+Or check your config (opencode.json) provider/model names

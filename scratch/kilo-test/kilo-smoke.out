@@ -1,0 +1,1 @@
+{"type":"error","timestamp":1780775377585,"sessionID":"ses_161842d35ffe4aSt5fAEYmq6ZU","error":{"name":"UnknownError","data":{"message":"Model not found: nvidia/nemotron-3-super-120b-a12b:free."}}}
