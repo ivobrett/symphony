@@ -430,3 +430,5 @@ In-flight agent sessions are not interrupted when config changes.
 | Agent keeps retrying with backoff | Check for `turn_failed` or `startup_failed` events in debug logs (`LOG_LEVEL=debug`) |
 | `Claude Code cannot be launched inside another Claude Code session` | `CLAUDECODE` env var leaked into the subprocess — this is handled automatically by Symphony |
 | PRs failing with `No commits between main and agent/...` | Agent ran but made no code changes — check the issue description is specific enough |
+
+Thanks for reading! 😊
