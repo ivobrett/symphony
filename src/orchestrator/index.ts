@@ -315,9 +315,9 @@ export class Orchestrator {
 
       if (cancelSignal.aborted) return;
 
-      if (this.config.hooks.before_run) {
-        await runHook('before_run', this.config.hooks.before_run, entry.workspace_path, this.config.hooks.timeout_ms, hookContext);
-      }
+       if (this.config.hooks.before_run) {
+         await runHook('before_run', this.config.hooks.before_run, entry.workspace_path, this.config.hooks.timeout_ms, hookContext, process.env);
+       }
 
       if (cancelSignal.aborted) return;
 
@@ -349,13 +349,17 @@ export class Orchestrator {
     } catch (err) {
       workerError = (err as Error).message;
       ilog.error({ err }, `worker error issue_identifier=${issue.identifier}`);
-    } finally {
-      if (entry.workspace_path && this.config.hooks.after_run) {
-        const finalContext = { ...hookContext, agent_summary: cleanSummary(notifications) };
-        runHook('after_run', this.config.hooks.after_run, entry.workspace_path, this.config.hooks.timeout_ms, finalContext).catch(
-          (err) => ilog.warn({ err }, 'after_run hook failed (ignored)'),
-        );
-      }
+     } finally {
+        logger.info({ hook: 'after_run', issue_id: issue.id }, `checking after_run hook: workspace_path=${!!entry.workspace_path}, hook_defined=${!!this.config.hooks.after_run}`);
+        if (entry.workspace_path && this.config.hooks.after_run) {
+          logger.info({ hook: 'after_run', issue_id: issue.id }, `running after_run hook for issue ${issue.identifier}`);
+          const finalContext = { ...hookContext, agent_summary: cleanSummary(notifications) };
+          runHook('after_run', this.config.hooks.after_run, entry.workspace_path, this.config.hooks.timeout_ms, finalContext, process.env).catch(
+            (err) => ilog.warn({ err }, 'after_run hook failed (ignored)'),
+          );
+        } else {
+          logger.info({ hook: 'after_run', issue_id: issue.id }, `skipping after_run hook: workspace_path=${!!entry.workspace_path}, hook_defined=${!!this.config.hooks.after_run}`);
+        }
 
       const durationSeconds = (Date.now() - startedAt.getTime()) / 1000;
       if (lastUsage) {

@@ -9,6 +9,7 @@ export async function runHook(
   cwd: string,
   timeoutMs: number,
   context: Record<string, string> = {},
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
   const effectiveTimeout = timeoutMs > 0 ? timeoutMs : 60000;
 
@@ -24,7 +25,7 @@ export async function runHook(
   logger.info({ hook: hookName, cwd }, `running hook hook=${hookName}`);
 
   return new Promise((resolve, reject) => {
-    const child = spawn('sh', ['-lc', interpolatedScript], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('sh', ['-lc', interpolatedScript], { cwd, stdio: ['ignore', 'pipe', 'pipe'], env });
 
     let stdout = '';
     let stderr = '';

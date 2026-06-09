@@ -3,5 +3,11 @@ dist/
 
 # Local workflow config — keep secrets out of git
 WORKFLOW.md
+WORKFLOW.md.backup
+WORKFLOW.md.June7
+WORKFLOW.md.fullsetup
+
+# Log files may contain inline API keys from the command runner
+symphony.log
 
 .env

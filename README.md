@@ -259,6 +259,8 @@ Controls how the Claude Code CLI is invoked.
 | `disallowed_tools` | (none) | Tools to explicitly block. |
 | `max_turns` | `20` | Maximum agentic turns per session. |
 | `system_prompt` | (none) | Optional system prompt prepended to every session. |
+| `base_url` | (none) | Optional base URL for custom endpoints (e.g., `https://openrouter.ai/api` for OpenRouter). |
+| `auth_token` | (none) | Optional authentication token for custom endpoints (resolves to `ANTHROPIC_AUTH_TOKEN`). |
 | `turn_timeout_ms` | `3600000` (1 hour) | Wall-clock timeout for a single session. |
 | `stall_timeout_ms` | `300000` (5 min) | If no output is received for this long, the session is killed and retried. |
 

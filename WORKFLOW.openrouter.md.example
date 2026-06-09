@@ -1,0 +1,69 @@
+---
+# Symphony Multi-Project Configuration — Claude Code via OpenRouter Example
+
+orchestrator:
+  polling_interval_ms: 30000
+  max_concurrent_agents: 5
+  max_attempts: 3
+
+tracker:
+  backend: linear
+  linear:
+    api_key: $LINEAR_API_KEY
+    active_states:
+      - Todo
+      - To Do
+      - In Progress
+      - Triage
+    done_state: Done
+
+# Project Routing Map — maps Linear project slugs to GitHub repos.
+# Find your project slug in Linear: Settings → Projects → copy the slug from the URL.
+projects:
+  - name: "My Project"
+    linear_project_slug: "your-project-slug-here"
+    repo_url: "https://github.com/your-org/your-repo.git"
+    target_branch: "main"
+
+workspace:
+  root: ~/symphony_workspaces
+
+hooks:
+  timeout_ms: 600000
+  before_run: |
+    echo "Setting up workspace for {{issue_identifier}} in {{repo_name}}..."
+    git clone {{repo_url}} .
+    git checkout {{target_branch}}
+    git checkout -b agent/{{issue_identifier}}
+
+  after_run: |
+    set -e
+    git push origin agent/{{issue_identifier}} --force
+    gh pr create --repo {{repo_url}} \
+      --title '{{issue_identifier}}: {{issue_title}}' \
+      --body '{{agent_summary}}'
+
+agent:
+  backend: claude
+
+claude:
+  command: claude
+  model: openrouter/owl-alpha
+  base_url: $ANTHROPIC_BASE_URL
+  auth_token: $ANTHROPIC_AUTH_TOKEN
+  max_turns: 20
+  turn_timeout_ms: 3600000
+  stall_timeout_ms: 300000
+
+server:
+  port: 3000
+---
+
+You are an expert coding agent. Your goal is to resolve the provided issue: {{issue.identifier}} - {{issue.title}}.
+
+Issue Description:
+{{issue.description}}
+
+Use the available tools to explore the codebase, edit files, and run tests.
+Always use git commit after making changes.
+When done, provide a concise summary of your work.

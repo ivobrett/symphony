@@ -25,10 +25,10 @@ export function buildServiceConfig(workflow: WorkflowDefinition): ServiceConfig 
   const trackerCfg = (cfg.tracker as any) || {};
   const linearCfg = (trackerCfg.linear as any) || {};
   const agentCfg = (cfg.agent as any) || {};
-  const geminiCfg = (cfg.gemini as any) || {};
-const claudeCfg = (cfg.claude as any) || {};
-  const auggieCfg = (cfg.auggie as any) || {};
-  const kiloCfg = (cfg.kilo as any) || {};
+  const geminiCfg = (cfg.gemini as any) || agentCfg.gemini || {};
+  const claudeCfg = (cfg.claude as any) || agentCfg.claude || {};
+  const auggieCfg = (cfg.auggie as any) || agentCfg.auggie || {};
+  const kiloCfg = (cfg.kilo as any) || agentCfg.kilo || {};
   const projects = (cfg.projects as any[]) || [];
   const hooksCfg = (cfg.hooks as any) || {};
   const workspaceCfg = (cfg.workspace as any) || {};
@@ -79,19 +79,20 @@ const claudeCfg = (cfg.claude as any) || {};
         sandbox: geminiCfg.sandbox || null,
         output_format: geminiCfg.output_format || 'json',
       },
-      claude: {
-        command: String(claudeCfg.command ?? 'claude'),
-        model: claudeCfg.model || null,
-        max_turns: Number(claudeCfg.max_turns) || 20,
-        api_key: resolveEnv(claudeCfg.api_key || '$ANTHROPIC_API_KEY'),
-        permission_mode: String(claudeCfg.permission_mode ?? 'bypassPermissions'),
-        allowed_tools: toStringList(claudeCfg.allowed_tools),
-        disallowed_tools: toStringList(claudeCfg.disallowed_tools),
-        system_prompt: claudeCfg.system_prompt || null,
-        turn_timeout_ms: Number(claudeCfg.turn_timeout_ms) || 3600000,
-        base_url: resolveEnv(claudeCfg.base_url || '' ) || null,
-        stall_timeout_ms: Number(claudeCfg.stall_timeout_ms) || 300000,
-      },
+       claude: {
+         command: String(claudeCfg.command ?? 'claude'),
+         model: claudeCfg.model || null,
+         max_turns: Number(claudeCfg.max_turns) || 20,
+         api_key: resolveEnv(claudeCfg.api_key || '$ANTHROPIC_API_KEY'),
+         permission_mode: String(claudeCfg.permission_mode ?? 'bypassPermissions'),
+         allowed_tools: toStringList(claudeCfg.allowed_tools),
+         disallowed_tools: toStringList(claudeCfg.disallowed_tools),
+         system_prompt: claudeCfg.system_prompt || null,
+         turn_timeout_ms: Number(claudeCfg.turn_timeout_ms) || 3600000,
+         base_url: resolveEnv(claudeCfg.base_url || '' ) || null,
+         stall_timeout_ms: Number(claudeCfg.stall_timeout_ms) || 300000,
+         auth_token: resolveEnv(claudeCfg.auth_token || '') || null,
+       },
       auggie: {
         command: String(auggieCfg.command ?? 'auggie'),
         model: auggieCfg.model || null,

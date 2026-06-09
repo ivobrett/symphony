@@ -24,7 +24,23 @@ function buildClaudeCommand(config: ClaudeConfig, promptFile: string): string {
   // Prompt delivered via stdin redirect from temp file — avoids all quoting/env issues
   parts.push(`< ${shellEscape(promptFile)}`);
 
-  return parts.join(' ');
+  const baseCommand = parts.join(' ');
+  const baseUrl = config.base_url || process.env.ANTHROPIC_BASE_URL;
+  const authToken = config.auth_token || process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_API_KEY || process.env.OPENROUTER_API_KEY;
+
+  if (baseUrl && authToken) {
+    const envPrefixes: string[] = [];
+    envPrefixes.push(`ANTHROPIC_BASE_URL=${shellEscape(baseUrl)}`);
+    envPrefixes.push(`ANTHROPIC_AUTH_TOKEN=${shellEscape(authToken)}`);
+    if (config.model) {
+      envPrefixes.push(`ANTHROPIC_MODEL=${shellEscape(config.model)}`);
+    }
+    const apiKey = config.api_key || process.env.ANTHROPIC_API_KEY || authToken;
+    envPrefixes.push(`ANTHROPIC_API_KEY=${shellEscape(apiKey)}`);
+    return `${envPrefixes.join(' ')} ${baseCommand}`;
+  }
+
+  return baseCommand;
 }
 
 function shellEscape(s: string): string {
@@ -67,8 +83,10 @@ export async function runAgent(
 
   const command = buildClaudeCommand(config, promptFile);
 
+  // Redact env var values from the command string before logging to avoid leaking API keys
+  const redactedCommand = command.replace(/\b([A-Z_]+=)'[^']*'/g, "$1'***'");
   logger.info(
-    { issue_id: issue.id, issue_identifier: issue.identifier, cwd: resolvedWs, command },
+    { issue_id: issue.id, issue_identifier: issue.identifier, cwd: resolvedWs, command: redactedCommand },
     `launching claude code issue_id=${issue.id} issue_identifier=${issue.identifier}`,
   );
 
@@ -76,8 +94,20 @@ export async function runAgent(
    delete env['CLAUDECODE']; // prevent "nested session" rejection
    if (config.api_key) env['ANTHROPIC_API_KEY'] = config.api_key;
    if (config.base_url) env['ANTHROPIC_BASE_URL'] = config.base_url;
+   if (config.auth_token) env['ANTHROPIC_AUTH_TOKEN'] = config.auth_token;
+   // Set model via environment variable for compatibility with various CLI tools
+   if (config.model) env['ANTHROPIC_MODEL'] = config.model;
    // Pass through GH_TOKEN for GitHub operations
    if (process.env.GH_TOKEN) env['GH_TOKEN'] = process.env.GH_TOKEN;
+
+   // Log environment variables being set (without values for security)
+   const envKeys = Object.keys(env).filter(k => 
+     k.includes('ANTHROPIC') || k.includes('OPENROUTER') || k === 'GH_TOKEN'
+   );
+   logger.info(
+     { issue_id: issue.id, issue_identifier: issue.identifier, env_vars_set: envKeys },
+     `setting environment variables for claude command`
+   );
 
   const child = spawn('bash', ['-lc', command], {
     cwd: resolvedWs,

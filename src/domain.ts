@@ -91,17 +91,18 @@ export interface GeminiConfig {
 }
 
 export interface ClaudeConfig {
-  command: string;
-  model: string | null;
-  max_turns: number;
-  api_key: string;
-  permission_mode: string | null;
-  allowed_tools: string[];
-  disallowed_tools: string[];
-  system_prompt: string | null;
-  turn_timeout_ms: number;
-  base_url: string | null;
-  stall_timeout_ms: number;
+   command: string;
+   model: string | null;
+   max_turns: number;
+   api_key: string;
+   permission_mode: string | null;
+   allowed_tools: string[];
+   disallowed_tools: string[];
+   system_prompt: string | null;
+   turn_timeout_ms: number;
+   base_url: string | null;
+   stall_timeout_ms: number;
+   auth_token: string | null;
 }
 
 export interface KiloConfig {
