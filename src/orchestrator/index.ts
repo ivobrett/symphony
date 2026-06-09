@@ -350,17 +350,6 @@ export class Orchestrator {
       workerError = (err as Error).message;
       ilog.error({ err }, `worker error issue_identifier=${issue.identifier}`);
      } finally {
-        logger.info({ hook: 'after_run', issue_id: issue.id }, `checking after_run hook: workspace_path=${!!entry.workspace_path}, hook_defined=${!!this.config.hooks.after_run}`);
-        if (entry.workspace_path && this.config.hooks.after_run) {
-          logger.info({ hook: 'after_run', issue_id: issue.id }, `running after_run hook for issue ${issue.identifier}`);
-          const finalContext = { ...hookContext, agent_summary: cleanSummary(notifications) };
-          runHook('after_run', this.config.hooks.after_run, entry.workspace_path, this.config.hooks.timeout_ms, finalContext, process.env).catch(
-            (err) => ilog.warn({ err }, 'after_run hook failed (ignored)'),
-          );
-        } else {
-          logger.info({ hook: 'after_run', issue_id: issue.id }, `skipping after_run hook: workspace_path=${!!entry.workspace_path}, hook_defined=${!!this.config.hooks.after_run}`);
-        }
-
       const durationSeconds = (Date.now() - startedAt.getTime()) / 1000;
       if (lastUsage) {
         accumulateRuntime(this.state.claude_totals, { event: 'turn_completed' as any, timestamp: new Date(), claude_pid: null, usage: lastUsage }, durationSeconds);
@@ -375,7 +364,27 @@ export class Orchestrator {
       return;
     }
 
-    if (workerSucceeded || !workerError) {
+    // Run the after_run hook synchronously so its result (PR created or not)
+    // can influence the Done vs retry decision below.
+    let hookSucceeded = false;
+    logger.info({ hook: 'after_run', issue_id: issue.id }, `checking after_run hook: workspace_path=${!!entry.workspace_path}, hook_defined=${!!this.config.hooks.after_run}`);
+    if (entry.workspace_path && this.config.hooks.after_run) {
+      logger.info({ hook: 'after_run', issue_id: issue.id }, `running after_run hook for issue ${issue.identifier}`);
+      const finalContext = { ...hookContext, agent_summary: cleanSummary(notifications) };
+      try {
+        await runHook('after_run', this.config.hooks.after_run, entry.workspace_path, this.config.hooks.timeout_ms, finalContext, process.env);
+        hookSucceeded = true;
+        ilog.info({ issue_identifier: issue.identifier }, `after_run hook succeeded — treating as worker success`);
+      } catch (err) {
+        ilog.warn({ err }, 'after_run hook failed');
+      }
+    } else {
+      logger.info({ hook: 'after_run', issue_id: issue.id }, `skipping after_run hook: workspace_path=${!!entry.workspace_path}, hook_defined=${!!this.config.hooks.after_run}`);
+    }
+
+    // Treat hook success as worker success: if the hook created/found a PR,
+    // the agent's work shipped even if the session ended with turn_failed.
+    if (workerSucceeded || !workerError || hookSucceeded) {
       const summary = cleanSummary(notifications);
       if (summary) {
         this.tracker.addComment(issue.id, `Agent Summary:\n\n${summary}`).catch(err => ilog.warn({ err }, 'failed to add linear comment'));
