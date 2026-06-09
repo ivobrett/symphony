@@ -390,9 +390,14 @@ export class Orchestrator {
       this.state.completed.add(issue.id);
     } else {
       const nextAttempt = (attempt ?? 0) + 1;
-      const delay = computeBackoffMs(nextAttempt, this.config.orchestrator.max_retry_backoff_ms);
-      ilog.warn({ error: workerError, next_attempt: nextAttempt, delay_ms: delay }, `worker failed, scheduling retry issue_identifier=${issue.identifier}`);
-      scheduleRetry(this.state, issue.id, issue.identifier, nextAttempt, workerError, delay, this.config, this.tracker, this.dispatch);
+      if (nextAttempt > this.config.orchestrator.max_attempts) {
+        ilog.warn({ error: workerError, attempt, max_attempts: this.config.orchestrator.max_attempts }, `max_attempts reached, giving up issue_identifier=${issue.identifier}`);
+        unclaim(this.state, issue.id);
+      } else {
+        const delay = computeBackoffMs(nextAttempt, this.config.orchestrator.max_retry_backoff_ms);
+        ilog.warn({ error: workerError, next_attempt: nextAttempt, delay_ms: delay }, `worker failed, scheduling retry issue_identifier=${issue.identifier}`);
+        scheduleRetry(this.state, issue.id, issue.identifier, nextAttempt, workerError, delay, this.config, this.tracker, this.dispatch);
+      }
     }
 
     this.notifyObservers();
